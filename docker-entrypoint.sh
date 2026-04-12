@@ -5,9 +5,17 @@ echo "================================================"
 echo " Dragon Services Bot - Starting up"
 echo "================================================"
 
-# Push schema using drizzle (creates all tables if missing, safe to run every time)
+# Check if schema already exists
 echo "[1/3] Setting up database schema..."
-npm run db:push 2>&1 | tail -5 || echo "     Schema already up to date"
+TABLE_EXISTS=$(psql "$DATABASE_URL" -t -c "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'gp_rates')" 2>/dev/null | tr -d ' \n')
+
+if [ "$TABLE_EXISTS" = "t" ]; then
+  echo "     Schema already exists - skipping"
+else
+  echo "     Creating tables..."
+  psql "$DATABASE_URL" -f /app/migrations/0000_init.sql 2>&1 | grep -v "^$" || true
+  echo "     Done!"
+fi
 
 # Import data using psql (migration SQL uses ON CONFLICT DO NOTHING - safe to run every time)
 if [ -f "/app/dragon-services-migration.sql" ]; then
