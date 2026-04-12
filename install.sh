@@ -54,7 +54,7 @@ echo ""
 
 SKIP_CONFIG=false
 if [ -f "$INSTALL_DIR/.env" ]; then
-  read -p "⚠️  Bot is already configured. Reconfigure? (y/N): " RECONFIG
+  read -p "⚠️  Bot is already configured. Reconfigure? (y/N): " RECONFIG < /dev/tty
   if [[ "$RECONFIG" != "y" && "$RECONFIG" != "Y" ]]; then
     SKIP_CONFIG=true
     echo "Keeping existing config - updating bot..."
@@ -65,20 +65,20 @@ if [ "$SKIP_CONFIG" = false ]; then
   echo "1) Discord Bot Token"
   echo "   (From: discord.com/developers → Your App → Bot → Token)"
   echo ""
-  read -p "   Paste token here: " BOT_TOKEN
+  read -p "   Paste token here: " BOT_TOKEN < /dev/tty
   echo ""
 
   echo "2) Database Password"
   echo "   (Make up any password - only used internally)"
   echo ""
-  read -p "   Enter a password: " DB_PASS
+  read -p "   Enter a password: " DB_PASS < /dev/tty
   echo ""
 
   echo "3) Session Secret"
   echo "   (Press ENTER to auto-generate)"
   echo ""
   AUTO_SECRET=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "dragon-$(date +%s%N)")
-  read -p "   Secret (ENTER to auto-generate): " SESSION_SECRET
+  read -p "   Secret (ENTER to auto-generate): " SESSION_SECRET < /dev/tty
   if [ -z "$SESSION_SECRET" ]; then
     SESSION_SECRET="$AUTO_SECRET"
     echo "   Generated: $SESSION_SECRET"
