@@ -296,9 +296,10 @@ export function createCalculationResultEmbed(selectedServices: any[]) {
 export function createSkillCalculatorEmbed(data: any) {
   const { skill, startLevel, endLevel, expNeeded, methods } = data;
   
-  // Format numbers exactly like the image
   const formatGP = (gp: number) => {
-    if (gp >= 1000000) {
+    if (gp >= 1000000000) {
+      return `${(gp / 1000000000).toFixed(2)}B`;
+    } else if (gp >= 1000000) {
       return `${(gp / 1000000).toFixed(2)}M`;
     } else if (gp >= 1000) {
       return `${(gp / 1000).toFixed(1)}K`;
@@ -307,40 +308,47 @@ export function createSkillCalculatorEmbed(data: any) {
     }
   };
 
-  const formatNumber = (num: number) => {
-    return num.toLocaleString();
-  };
-
-  // Get skill icon
   const skillIcon = getSkillIcon(skill.name);
   
-  // Get the actual OSRS skill icon URL
-  const skillIconUrl = getOSRSSkillIconUrl(skill.name);
-  
   const embed = new EmbedBuilder()
-    .setTitle(`${skillIcon} ${skill.name.charAt(0).toUpperCase() + skill.name.slice(1)} ${startLevel}-${endLevel}`)
+    .setTitle(`${skillIcon} ${skill.name.charAt(0).toUpperCase() + skill.name.slice(1)} — Levels ${startLevel} to ${endLevel}`)
     .setColor(0xFF6B35);
 
-  // Format like the image - list all methods
+  // Group method breakdowns by method name
+  const grouped: Map<string, any[]> = new Map();
+  for (const methodData of methods) {
+    const key = methodData.method.name;
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key)!.push(methodData);
+  }
+
   let description = '';
   let grandTotal = 0;
-  
-  methods.forEach((methodData: any, index: number) => {
-    const { method, totalCost, expNeeded, levelRange } = methodData;
-    
-    const methodEmoji = getMethodEmoji(method.name);
-    const actualLevelRange = levelRange || `${startLevel}-${endLevel}`;
-    const totalCostFormatted = `${formatGP(totalCost)}`;
-    
-    description += `${methodEmoji} ${method.name}\n`;
-    description += `Levels ${actualLevelRange} • ${totalCostFormatted} GP\n\n`;
-    
-    grandTotal += totalCost;
-  });
+  let groupIndex = 0;
 
-  // Add grand total line
-  if (methods.length > 0) {
-    description += `**💰 Grand Total: ${formatGP(grandTotal)} GP**`;
+  for (const [methodName, entries] of grouped) {
+    const methodEmoji = getMethodEmoji(methodName);
+    let methodTotal = 0;
+
+    description += `**${methodEmoji} ${methodName}**\n`;
+
+    for (const entry of entries) {
+      const { levelRange, totalCost, gpPerXp } = entry;
+      methodTotal += totalCost;
+      description += `\`[${levelRange}]\` • ${gpPerXp} gp/xp • 💰 ${formatGP(totalCost)} GP\n`;
+    }
+
+    description += `> 💵 **Method Total: ${formatGP(methodTotal)} GP**\n`;
+    grandTotal += methodTotal;
+
+    groupIndex++;
+    if (groupIndex < grouped.size) {
+      description += `\n`;
+    }
+  }
+
+  if (grouped.size > 1) {
+    description += `\n━━━━━━━━━━━━━━━━━━━━\n💰 **Grand Total: ${formatGP(grandTotal)} GP**`;
   }
 
   embed.setDescription(description.trim());
