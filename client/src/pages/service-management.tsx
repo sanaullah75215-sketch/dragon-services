@@ -6,19 +6,32 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Link } from "wouter";
-import { ArrowLeft, Plus, Edit, Trash2, DollarSign } from "lucide-react";
-import { Service, insertServiceSchema, type InsertService, type ServiceOption } from "@shared/schema";
+import { ArrowLeft, Plus, Edit, Trash2, ChevronDown, ChevronRight, GripVertical, X } from "lucide-react";
+import { Service, type ServiceOption, type PriceItem } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
 export default function ServiceManagement() {
   const [editingService, setEditingService] = useState<Service | null>(null);
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [serviceDialogOpen, setServiceDialogOpen] = useState(false);
+  const [editingOption, setEditingOption] = useState<{ service: Service; option: ServiceOption | null; index: number | null } | null>(null);
+  const [optionDialogOpen, setOptionDialogOpen] = useState(false);
+  const [expandedServices, setExpandedServices] = useState<Set<string>>(new Set());
+
+  // Service form state
+  const [svcName, setSvcName] = useState("");
+  const [svcIcon, setSvcIcon] = useState("");
+  const [svcDesc, setSvcDesc] = useState("");
+  const [svcCategory, setSvcCategory] = useState("");
+
+  // Option form state
+  const [optName, setOptName] = useState("");
+  const [optDesc, setOptDesc] = useState("");
+  const [optPriceItems, setOptPriceItems] = useState<PriceItem[]>([]);
+
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -26,99 +39,144 @@ export default function ServiceManagement() {
     queryKey: ["/api/services"],
   });
 
-  const form = useForm<InsertService>({
-    resolver: zodResolver(insertServiceSchema),
-    defaultValues: {
-      name: "",
-      description: "",
-      icon: "",
-      category: "",
-      isActive: true,
-      options: []
-    }
-  });
-
-  const createServiceMutation = useMutation({
-    mutationFn: (data: InsertService) => apiRequest("POST", "/api/services", data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/services"] });
-      setIsDialogOpen(false);
-      form.reset();
-      toast({ title: "Service created successfully!" });
-    },
-    onError: () => {
-      toast({ title: "Failed to create service", variant: "destructive" });
-    }
-  });
-
   const updateServiceMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<Service> }) => 
+    mutationFn: ({ id, data }: { id: string; data: any }) =>
       apiRequest("PATCH", `/api/services/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/services"] });
-      setEditingService(null);
-      setIsDialogOpen(false);
-      toast({ title: "Service updated successfully!" });
+      setServiceDialogOpen(false);
+      toast({ title: "Service updated!" });
     },
-    onError: (error: any) => {
-      console.error("Update service error:", error);
-      toast({ 
-        title: "Failed to update service", 
-        description: error?.message || "Unknown error", 
-        variant: "destructive" 
-      });
-    }
+    onError: () => toast({ title: "Failed to update service", variant: "destructive" }),
+  });
+
+  const createServiceMutation = useMutation({
+    mutationFn: (data: any) => apiRequest("POST", "/api/services", data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/services"] });
+      setServiceDialogOpen(false);
+      toast({ title: "Service created!" });
+    },
+    onError: () => toast({ title: "Failed to create service", variant: "destructive" }),
   });
 
   const deleteServiceMutation = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/services/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/services"] });
-      toast({ title: "Service deactivated successfully!" });
+      toast({ title: "Service deleted!" });
     },
-    onError: () => {
-      toast({ title: "Failed to deactivate service", variant: "destructive" });
-    }
+    onError: () => toast({ title: "Failed to delete service", variant: "destructive" }),
   });
 
-  const handleEdit = (service: Service) => {
-    setEditingService(service);
-    form.reset({
-      name: service.name,
-      description: service.description,
-      icon: service.icon,
-      category: service.category,
-      isActive: service.isActive,
-      options: service.options || []
+  // Save a service's options (when adding/editing/removing an option)
+  const saveOptionsMutation = useMutation({
+    mutationFn: ({ id, options }: { id: string; options: ServiceOption[] }) =>
+      apiRequest("PATCH", `/api/services/${id}`, { options }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/services"] });
+      setOptionDialogOpen(false);
+      toast({ title: "Options saved!" });
+    },
+    onError: () => toast({ title: "Failed to save options", variant: "destructive" }),
+  });
+
+  const toggleExpand = (id: string) => {
+    setExpandedServices(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
     });
-    setIsDialogOpen(true);
   };
 
-  const handleSubmit = (data: InsertService) => {
+  // --- Service dialog helpers ---
+  const openAddService = () => {
+    setEditingService(null);
+    setSvcName(""); setSvcIcon(""); setSvcDesc(""); setSvcCategory("");
+    setServiceDialogOpen(true);
+  };
+
+  const openEditService = (service: Service) => {
+    setEditingService(service);
+    setSvcName(service.name);
+    setSvcIcon(service.icon);
+    setSvcDesc(service.description);
+    setSvcCategory(service.category);
+    setServiceDialogOpen(true);
+  };
+
+  const handleSaveService = () => {
+    if (!svcName || !svcIcon || !svcDesc || !svcCategory) {
+      toast({ title: "All fields required", variant: "destructive" });
+      return;
+    }
+    const payload = { name: svcName, icon: svcIcon, description: svcDesc, category: svcCategory, isActive: true };
     if (editingService) {
-      updateServiceMutation.mutate({ id: editingService.id, data });
+      updateServiceMutation.mutate({ id: editingService.id, data: payload });
     } else {
-      createServiceMutation.mutate(data);
+      createServiceMutation.mutate({ ...payload, options: [] });
     }
   };
 
-  const addOption = () => {
-    const currentOptions = form.getValues("options") || [];
-    form.setValue("options", [
-      ...currentOptions,
-      { id: Date.now().toString(), name: "", description: "", price: "", duration: "" }
-    ], { shouldDirty: true });
+  // --- Option dialog helpers ---
+  const openAddOption = (service: Service) => {
+    setEditingOption({ service, option: null, index: null });
+    setOptName(""); setOptDesc(""); setOptPriceItems([{ name: "", price: "" }]);
+    setOptionDialogOpen(true);
   };
 
-  const removeOption = (index: number) => {
-    const currentOptions = form.getValues("options") || [];
-    form.setValue("options", currentOptions.filter((_, i) => i !== index), { shouldDirty: true });
+  const openEditOption = (service: Service, option: ServiceOption, index: number) => {
+    setEditingOption({ service, option, index });
+    setOptName(option.name);
+    setOptDesc(option.description || "");
+    setOptPriceItems(option.priceItems && option.priceItems.length > 0
+      ? [...option.priceItems]
+      : option.price ? [{ name: option.name, price: option.price }] : [{ name: "", price: "" }]
+    );
+    setOptionDialogOpen(true);
+  };
+
+  const handleSaveOption = () => {
+    if (!editingOption) return;
+    if (!optName) {
+      toast({ title: "Option name required", variant: "destructive" });
+      return;
+    }
+
+    const cleanPriceItems = optPriceItems.filter(p => p.name.trim() && p.price.trim());
+    const updatedOption: ServiceOption = {
+      id: editingOption.option?.id || Date.now().toString(),
+      name: optName,
+      description: optDesc,
+      priceItems: cleanPriceItems,
+    };
+
+    const currentOptions = [...(editingOption.service.options || [])];
+    if (editingOption.index !== null) {
+      currentOptions[editingOption.index] = updatedOption;
+    } else {
+      currentOptions.push(updatedOption);
+    }
+
+    saveOptionsMutation.mutate({ id: editingOption.service.id, options: currentOptions });
+  };
+
+  const handleDeleteOption = (service: Service, index: number) => {
+    const updatedOptions = [...(service.options || [])].filter((_, i) => i !== index);
+    saveOptionsMutation.mutate({ id: service.id, options: updatedOptions });
+  };
+
+  const addPriceItem = () => setOptPriceItems(prev => [...prev, { name: "", price: "" }]);
+  const removePriceItem = (i: number) => setOptPriceItems(prev => prev.filter((_, idx) => idx !== i));
+  const updatePriceItem = (i: number, field: "name" | "price", value: string) => {
+    setOptPriceItems(prev => prev.map((p, idx) => idx === i ? { ...p, [field]: value } : p));
   };
 
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full"></div>
+        <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" />
       </div>
     );
   }
@@ -127,271 +185,233 @@ export default function ServiceManagement() {
     <div className="min-h-screen bg-background">
       {/* Header */}
       <div className="border-b border-border bg-card">
-        <div className="max-w-7xl mx-auto px-4 py-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <Link href="/management">
-                <Button variant="ghost" size="sm" data-testid="button-back">
-                  <ArrowLeft className="h-4 w-4 mr-2" />
-                  Back
-                </Button>
-              </Link>
-              <div>
-                <h1 className="text-3xl font-bold text-foreground">Service Management</h1>
-                <p className="text-muted-foreground">Manage Dragon Services offerings and pricing</p>
-              </div>
+        <div className="max-w-5xl mx-auto px-4 py-6 flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            <Link href="/management">
+              <Button variant="ghost" size="sm">
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Back
+              </Button>
+            </Link>
+            <div>
+              <h1 className="text-2xl font-bold text-foreground">Service Management</h1>
+              <p className="text-sm text-muted-foreground">Manage categories, sub-services, and price lists</p>
             </div>
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-              <DialogTrigger asChild>
-                <Button data-testid="button-add-service">
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Service
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                  <DialogTitle>{editingService ? "Edit Service" : "Add New Service"}</DialogTitle>
-                </DialogHeader>
-                <Form {...form}>
-                  <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <FormField
-                        control={form.control}
-                        name="name"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Service Name</FormLabel>
-                            <FormControl>
-                              <Input placeholder="e.g., Questing" {...field} data-testid="input-service-name" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="icon"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Icon (emoji)</FormLabel>
-                            <FormControl>
-                              <Input placeholder="🎯" {...field} data-testid="input-service-icon" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-                    
-                    <FormField
-                      control={form.control}
-                      name="description"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Description</FormLabel>
-                          <FormControl>
-                            <Textarea 
-                              placeholder="Professional quest completion services" 
-                              {...field} 
-                              data-testid="input-service-description"
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="category"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Category</FormLabel>
-                          <FormControl>
-                            <Input placeholder="questing" {...field} data-testid="input-service-category" />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <Label>Service Options</Label>
-                        <Button type="button" onClick={addOption} size="sm" data-testid="button-add-option">
-                          <Plus className="h-4 w-4 mr-2" />
-                          Add Option
-                        </Button>
-                      </div>
-                      
-                      {form.watch("options")?.map((option, index) => (
-                        <Card key={index} className="p-4">
-                          <div className="grid grid-cols-2 gap-4 mb-4">
-                            <div>
-                              <Label>Option Name</Label>
-                              <Input
-                                placeholder="Recipe for Disaster"
-                                value={option.name}
-                                onChange={(e) => {
-                                  const currentOptions = [...(form.getValues("options") || [])];
-                                  currentOptions[index] = { ...currentOptions[index], name: e.target.value };
-                                  form.setValue("options", currentOptions, { shouldDirty: true });
-                                }}
-                                data-testid={`input-option-name-${index}`}
-                              />
-                            </div>
-                            <div>
-                              <Label>Price</Label>
-                              <Input
-                                placeholder="50M"
-                                value={option.price}
-                                onChange={(e) => {
-                                  const currentOptions = [...(form.getValues("options") || [])];
-                                  currentOptions[index] = { ...currentOptions[index], price: e.target.value };
-                                  form.setValue("options", currentOptions, { shouldDirty: true });
-                                }}
-                                data-testid={`input-option-price-${index}`}
-                              />
-                            </div>
-                          </div>
-                          <div className="grid grid-cols-2 gap-4 mb-4">
-                            <div>
-                              <Label>Duration</Label>
-                              <Input
-                                placeholder="3-5 days"
-                                value={option.duration}
-                                onChange={(e) => {
-                                  const currentOptions = [...(form.getValues("options") || [])];
-                                  currentOptions[index] = { ...currentOptions[index], duration: e.target.value };
-                                  form.setValue("options", currentOptions, { shouldDirty: true });
-                                }}
-                                data-testid={`input-option-duration-${index}`}
-                              />
-                            </div>
-                            <div className="flex items-end">
-                              <Button 
-                                type="button" 
-                                variant="destructive" 
-                                size="sm" 
-                                onClick={() => removeOption(index)}
-                                data-testid={`button-remove-option-${index}`}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </div>
-                          <div>
-                            <Label>Description</Label>
-                            <Textarea
-                              placeholder="Complete RFD quest series"
-                              value={option.description}
-                              onChange={(e) => {
-                                const currentOptions = [...(form.getValues("options") || [])];
-                                currentOptions[index] = { ...currentOptions[index], description: e.target.value };
-                                form.setValue("options", currentOptions, { shouldDirty: true });
-                              }}
-                              data-testid={`input-option-description-${index}`}
-                            />
-                          </div>
-                        </Card>
-                      ))}
-                    </div>
-
-                    <div className="flex justify-end space-x-2">
-                      <Button 
-                        type="button" 
-                        variant="outline" 
-                        onClick={() => setIsDialogOpen(false)}
-                        data-testid="button-cancel"
-                      >
-                        Cancel
-                      </Button>
-                      <Button 
-                        type="submit" 
-                        disabled={createServiceMutation.isPending || updateServiceMutation.isPending}
-                        data-testid="button-save-service"
-                      >
-                        {editingService ? "Update" : "Create"} Service
-                      </Button>
-                    </div>
-                  </form>
-                </Form>
-              </DialogContent>
-            </Dialog>
           </div>
+          <Button onClick={openAddService}>
+            <Plus className="h-4 w-4 mr-2" />
+            Add Category
+          </Button>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 py-8">
-        <div className="grid gap-6">
-          {services?.map((service) => (
-            <Card key={service.id} data-testid={`service-card-${service.category}`}>
-              <CardHeader>
+      <div className="max-w-5xl mx-auto px-4 py-8 space-y-4">
+        {services?.length === 0 && (
+          <div className="text-center text-muted-foreground py-16">
+            No service categories yet. Click "Add Category" to get started.
+          </div>
+        )}
+
+        {services?.map((service) => (
+          <Card key={service.id}>
+            <Collapsible open={expandedServices.has(service.id)} onOpenChange={() => toggleExpand(service.id)}>
+              <CardHeader className="py-4">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <span className="text-2xl">{service.icon}</span>
-                    <div>
-                      <CardTitle className="flex items-center space-x-2">
-                        <span>{service.name}</span>
-                        <Badge variant={service.isActive ? "default" : "secondary"}>
-                          {service.isActive ? "Active" : "Inactive"}
-                        </Badge>
-                      </CardTitle>
-                      <p className="text-sm text-muted-foreground">{service.description}</p>
-                    </div>
-                  </div>
-                  <div className="flex space-x-2">
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={() => handleEdit(service)}
-                      data-testid={`button-edit-${service.category}`}
-                    >
-                      <Edit className="h-4 w-4" />
+                  <CollapsibleTrigger asChild>
+                    <button className="flex items-center space-x-3 text-left flex-1 min-w-0">
+                      {expandedServices.has(service.id)
+                        ? <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                        : <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      }
+                      <span className="text-2xl">{service.icon}</span>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-base">{service.name}</span>
+                          <Badge variant={service.isActive ? "default" : "secondary"} className="text-xs">
+                            {service.isActive ? "Active" : "Inactive"}
+                          </Badge>
+                          <Badge variant="outline" className="text-xs">
+                            {service.options?.length || 0} options
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground truncate">{service.description}</p>
+                      </div>
+                    </button>
+                  </CollapsibleTrigger>
+                  <div className="flex items-center gap-2 ml-4 flex-shrink-0">
+                    <Button variant="outline" size="sm" onClick={() => openEditService(service)}>
+                      <Edit className="h-3 w-3" />
                     </Button>
-                    <Button 
-                      variant="destructive" 
-                      size="sm" 
-                      onClick={() => deleteServiceMutation.mutate(service.id)}
-                      data-testid={`button-delete-${service.category}`}
-                    >
-                      <Trash2 className="h-4 w-4" />
+                    <Button variant="destructive" size="sm" onClick={() => {
+                      if (confirm(`Delete "${service.name}"?`)) deleteServiceMutation.mutate(service.id);
+                    }}>
+                      <Trash2 className="h-3 w-3" />
                     </Button>
                   </div>
                 </div>
               </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {service.options?.map((option, index) => (
-                    <div 
-                      key={option.id} 
-                      className="flex items-center justify-between p-3 rounded-lg bg-muted"
-                      data-testid={`option-${service.category}-${index}`}
-                    >
-                      <div>
-                        <div className="font-medium">{option.name}</div>
-                        <div className="text-sm text-muted-foreground">{option.description}</div>
-                      </div>
-                      <div className="flex items-center space-x-4 text-sm">
-                        <div className="flex items-center space-x-1">
-                          <DollarSign className="h-4 w-4 text-green-500" />
-                          <span>{option.price}</span>
+
+              <CollapsibleContent>
+                <CardContent className="pt-0 pb-4">
+                  <div className="space-y-2">
+                    {service.options?.map((option, idx) => {
+                      const hasItems = option.priceItems && option.priceItems.length > 0;
+                      return (
+                        <div key={option.id} className="border border-border rounded-lg p-3 bg-muted/30">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium text-sm">{option.name}</div>
+                              {hasItems ? (
+                                <div className="mt-1 space-y-0.5">
+                                  {option.priceItems!.map((p, pi) => (
+                                    <div key={pi} className="text-xs text-muted-foreground flex gap-2">
+                                      <span className="font-medium text-foreground">{p.name}</span>
+                                      <span>-</span>
+                                      <span className="text-green-500">{p.price}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : option.price ? (
+                                <div className="text-xs text-muted-foreground mt-1">
+                                  Price: <span className="text-green-500">{option.price}</span>
+                                </div>
+                              ) : (
+                                <div className="text-xs text-muted-foreground mt-1 italic">No prices set</div>
+                              )}
+                            </div>
+                            <div className="flex gap-1 flex-shrink-0">
+                              <Button variant="outline" size="sm" onClick={() => openEditOption(service, option, idx)}>
+                                <Edit className="h-3 w-3" />
+                              </Button>
+                              <Button variant="destructive" size="sm" onClick={() => {
+                                if (confirm(`Remove "${option.name}"?`)) handleDeleteOption(service, idx);
+                              }}>
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </div>
                         </div>
-                        <div className="text-muted-foreground">{option.duration}</div>
-                      </div>
-                    </div>
-                  ))}
-                  {(!service.options || service.options.length === 0) && (
-                    <div className="text-center text-muted-foreground py-4">
-                      No options configured
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+                      );
+                    })}
+                    <Button variant="outline" size="sm" className="w-full mt-2" onClick={() => openAddOption(service)}>
+                      <Plus className="h-3 w-3 mr-2" />
+                      Add Sub-Service
+                    </Button>
+                  </div>
+                </CardContent>
+              </CollapsibleContent>
+            </Collapsible>
+          </Card>
+        ))}
       </div>
+
+      {/* Service Edit/Add Dialog */}
+      <Dialog open={serviceDialogOpen} onOpenChange={setServiceDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editingService ? "Edit Category" : "Add Category"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Name</Label>
+                <Input placeholder="Minigames" value={svcName} onChange={e => setSvcName(e.target.value)} />
+              </div>
+              <div>
+                <Label>Icon (emoji)</Label>
+                <Input placeholder="⚔️" value={svcIcon} onChange={e => setSvcIcon(e.target.value)} />
+              </div>
+            </div>
+            <div>
+              <Label>Category (internal ID)</Label>
+              <Input placeholder="minigames" value={svcCategory} onChange={e => setSvcCategory(e.target.value)} />
+            </div>
+            <div>
+              <Label>Description</Label>
+              <Textarea placeholder="Description shown in Discord" value={svcDesc} onChange={e => setSvcDesc(e.target.value)} />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setServiceDialogOpen(false)}>Cancel</Button>
+              <Button onClick={handleSaveService} disabled={createServiceMutation.isPending || updateServiceMutation.isPending}>
+                {editingService ? "Save Changes" : "Create"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Option Edit/Add Dialog */}
+      <Dialog open={optionDialogOpen} onOpenChange={setOptionDialogOpen}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {editingOption?.option ? `Edit: ${editingOption.option.name}` : `Add Sub-Service to ${editingOption?.service.name}`}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Sub-Service Name</Label>
+              <Input
+                placeholder="Barbarian Assault"
+                value={optName}
+                onChange={e => setOptName(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label>Description <span className="text-muted-foreground text-xs">(shown in dropdown)</span></Label>
+              <Input
+                placeholder="Scroll for more options!"
+                value={optDesc}
+                onChange={e => setOptDesc(e.target.value)}
+              />
+            </div>
+
+            {/* Price Items */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <Label>Price List</Label>
+                <Button type="button" variant="outline" size="sm" onClick={addPriceItem}>
+                  <Plus className="h-3 w-3 mr-1" />
+                  Add Item
+                </Button>
+              </div>
+              <div className="space-y-2">
+                {optPriceItems.map((item, i) => (
+                  <div key={i} className="flex gap-2 items-center">
+                    <Input
+                      placeholder="Fighter Torso"
+                      value={item.name}
+                      onChange={e => updatePriceItem(i, "name", e.target.value)}
+                      className="flex-1"
+                    />
+                    <Input
+                      placeholder="55M"
+                      value={item.price}
+                      onChange={e => updatePriceItem(i, "price", e.target.value)}
+                      className="w-24"
+                    />
+                    <Button type="button" variant="ghost" size="sm" onClick={() => removePriceItem(i)}>
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+                {optPriceItems.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-2">
+                    No prices yet. Click "Add Item" to add pricing.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setOptionDialogOpen(false)}>Cancel</Button>
+              <Button onClick={handleSaveOption} disabled={saveOptionsMutation.isPending}>
+                {saveOptionsMutation.isPending ? "Saving..." : "Save"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
