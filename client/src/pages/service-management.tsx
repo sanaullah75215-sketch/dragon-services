@@ -30,6 +30,7 @@ export default function ServiceManagement() {
   // Option form state
   const [optName, setOptName] = useState("");
   const [optDesc, setOptDesc] = useState("");
+  const [optNote, setOptNote] = useState("");
   const [optPriceItems, setOptPriceItems] = useState<PriceItem[]>([]);
 
   const queryClient = useQueryClient();
@@ -122,7 +123,7 @@ export default function ServiceManagement() {
   // --- Option dialog helpers ---
   const openAddOption = (service: Service) => {
     setEditingOption({ service, option: null, index: null });
-    setOptName(""); setOptDesc(""); setOptPriceItems([{ name: "", price: "" }]);
+    setOptName(""); setOptDesc(""); setOptNote(""); setOptPriceItems([{ name: "", price: "" }]);
     setOptionDialogOpen(true);
   };
 
@@ -130,6 +131,7 @@ export default function ServiceManagement() {
     setEditingOption({ service, option, index });
     setOptName(option.name);
     setOptDesc(option.description || "");
+    setOptNote(option.note || "");
     setOptPriceItems(option.priceItems && option.priceItems.length > 0
       ? [...option.priceItems]
       : option.price ? [{ name: option.name, price: option.price }] : [{ name: "", price: "" }]
@@ -150,6 +152,7 @@ export default function ServiceManagement() {
       name: optName,
       description: optDesc,
       priceItems: cleanPriceItems,
+      note: optNote.trim() || undefined,
     };
 
     const currentOptions = [...(editingOption.service.options || [])];
@@ -401,6 +404,16 @@ export default function ServiceManagement() {
                   </p>
                 )}
               </div>
+            </div>
+
+            {/* Note */}
+            <div>
+              <Label>Note <span className="text-muted-foreground text-xs">(shown below prices in Discord)</span></Label>
+              <Input
+                placeholder="e.g. Slayer helm required for hard diary"
+                value={optNote}
+                onChange={e => setOptNote(e.target.value)}
+              />
             </div>
 
             <div className="flex justify-end gap-2">
