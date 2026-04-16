@@ -37,9 +37,10 @@ interface MethodRow {
   minLevel: number;
   maxLevel: number;
   gpPerXp: string;
+  sortOrder: number;
 }
 
-const emptyRow = (): MethodRow => ({ name: "", minLevel: 1, maxLevel: 99, gpPerXp: "" });
+const emptyRow = (sortOrder = 0): MethodRow => ({ name: "", minLevel: 1, maxLevel: 99, gpPerXp: "", sortOrder });
 
 export default function TrainingMethods() {
   const { toast } = useToast();
@@ -112,20 +113,32 @@ export default function TrainingMethods() {
     if (!byName.has(m.name)) byName.set(m.name, []);
     byName.get(m.name)!.push(m);
   }
-  // Sort each group by minLevel
+  // Sort each group's entries by minLevel, then sort groups by their min sortOrder
   for (const byName of grouped.values()) {
     for (const entries of byName.values()) {
       entries.sort((a, b) => a.minLevel - b.minLevel);
     }
   }
 
+  // Helper: get min sortOrder for a group
+  const groupSortOrder = (entries: TrainingMethod[]) =>
+    Math.min(...entries.map(e => e.sortOrder ?? 999));
+
+  // Helper: next available sort order across all methods for a skill
+  const nextSortOrder = (skillId: string) => {
+    const skillMethods = trainingMethods.filter(m => m.skillId === skillId);
+    if (skillMethods.length === 0) return 1;
+    return Math.max(...skillMethods.map(m => m.sortOrder ?? 0)) + 1;
+  };
+
   const getSkill = (id: string) => skills.find(s => s.id === id);
 
   // Open "add new method" dialog fresh
-  const openAddDialog = (prefillSkillId?: string, prefillName?: string) => {
+  const openAddDialog = (prefillSkillId?: string, prefillName?: string, prefillSortOrder?: number) => {
     setEditingMethod(null);
     setDialogSkillId(prefillSkillId || "");
-    setRows([{ name: prefillName || "", minLevel: 1, maxLevel: 99, gpPerXp: "" }]);
+    const autoOrder = prefillSkillId ? nextSortOrder(prefillSkillId) : 1;
+    setRows([{ name: prefillName || "", minLevel: 1, maxLevel: 99, gpPerXp: "", sortOrder: prefillSortOrder ?? autoOrder }]);
     setIsDialogOpen(true);
   };
 
@@ -133,7 +146,7 @@ export default function TrainingMethods() {
   const openEditDialog = (method: TrainingMethod) => {
     setEditingMethod(method);
     setDialogSkillId(method.skillId);
-    setRows([{ name: method.name, minLevel: method.minLevel, maxLevel: method.maxLevel, gpPerXp: method.gpPerXp }]);
+    setRows([{ name: method.name, minLevel: method.minLevel, maxLevel: method.maxLevel, gpPerXp: method.gpPerXp, sortOrder: method.sortOrder ?? 0 }]);
     setIsDialogOpen(true);
   };
 
@@ -144,7 +157,7 @@ export default function TrainingMethods() {
   const addRow = () => {
     setRows(prev => {
       const last = prev[prev.length - 1];
-      return [...prev, { name: last.name, minLevel: last.maxLevel, maxLevel: 99, gpPerXp: "" }];
+      return [...prev, { name: last.name, minLevel: last.maxLevel, maxLevel: 99, gpPerXp: "", sortOrder: last.sortOrder }];
     });
   };
 
@@ -176,12 +189,11 @@ export default function TrainingMethods() {
         maxLevel: Number(row.maxLevel),
         xpPerHour: editingMethod.xpPerHour || 50000,
         isActive: true,
-        sortOrder: editingMethod.sortOrder || 0,
+        sortOrder: Number(row.sortOrder),
       });
     } else {
-      // Create all rows
-      for (let i = 0; i < rows.length; i++) {
-        const row = rows[i];
+      // Create all rows — all share the same sortOrder (they're all the same method group)
+      for (const row of rows) {
         await createMutation.mutateAsync({
           skillId: dialogSkillId,
           name: row.name,
@@ -190,7 +202,7 @@ export default function TrainingMethods() {
           maxLevel: Number(row.maxLevel),
           xpPerHour: 50000,
           isActive: true,
-          sortOrder: i,
+          sortOrder: Number(row.sortOrder),
         });
       }
       queryClient.invalidateQueries({ queryKey: ["/api/training-methods"] });
@@ -242,6 +254,10 @@ export default function TrainingMethods() {
         <div className="space-y-6">
           {Array.from(grouped.entries()).map(([skillId, byName]) => {
             const skill = getSkill(skillId);
+            // Sort method groups by their sortOrder number
+            const sortedGroups = Array.from(byName.entries()).sort(
+              ([, a], [, b]) => groupSortOrder(a) - groupSortOrder(b)
+            );
             return (
               <div key={skillId}>
                 <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
@@ -249,64 +265,72 @@ export default function TrainingMethods() {
                   <span>{skill?.name || "Unknown Skill"}</span>
                 </h2>
                 <div className="space-y-3">
-                  {Array.from(byName.entries()).map(([methodName, entries]) => (
-                    <Card key={methodName}>
-                      <CardHeader className="pb-2 flex flex-row items-center justify-between">
-                        <CardTitle className="text-base font-semibold">{methodName}</CardTitle>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => openAddDialog(skillId, methodName)}
-                        >
-                          <Plus className="w-3 h-3 mr-1" />
-                          Add Range
-                        </Button>
-                      </CardHeader>
-                      <CardContent className="pt-0">
-                        <div className="space-y-2">
-                          {entries.map(entry => (
-                            <div
-                              key={entry.id}
-                              className="flex items-center justify-between rounded-md border px-4 py-2 bg-muted/30"
-                            >
-                              <div className="flex items-center gap-6 text-sm">
-                                <div>
-                                  <span className="text-muted-foreground text-xs">Level Range</span>
-                                  <p className="font-medium">{entry.minLevel} – {entry.maxLevel}</p>
+                  {sortedGroups.map(([methodName, entries]) => {
+                    const order = groupSortOrder(entries);
+                    return (
+                      <Card key={methodName}>
+                        <CardHeader className="pb-2 flex flex-row items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs font-bold">
+                              {order}
+                            </span>
+                            <CardTitle className="text-base font-semibold">{methodName}</CardTitle>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openAddDialog(skillId, methodName, order)}
+                          >
+                            <Plus className="w-3 h-3 mr-1" />
+                            Add Range
+                          </Button>
+                        </CardHeader>
+                        <CardContent className="pt-0">
+                          <div className="space-y-2">
+                            {entries.map(entry => (
+                              <div
+                                key={entry.id}
+                                className="flex items-center justify-between rounded-md border px-4 py-2 bg-muted/30"
+                              >
+                                <div className="flex items-center gap-6 text-sm">
+                                  <div>
+                                    <span className="text-muted-foreground text-xs">Level Range</span>
+                                    <p className="font-medium">{entry.minLevel} – {entry.maxLevel}</p>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground text-xs">GP per XP</span>
+                                    <p className="font-medium text-green-500">{entry.gpPerXp} gp/xp</p>
+                                  </div>
+                                  {!entry.isActive && (
+                                    <Badge variant="destructive" className="text-xs">Inactive</Badge>
+                                  )}
                                 </div>
-                                <div>
-                                  <span className="text-muted-foreground text-xs">GP per XP</span>
-                                  <p className="font-medium text-green-500">{entry.gpPerXp} gp/xp</p>
+                                <div className="flex gap-2">
+                                  <Button
+                                    variant="outline"
+                                    size="icon"
+                                    className="h-7 w-7"
+                                    onClick={() => openEditDialog(entry)}
+                                  >
+                                    <Edit className="w-3 h-3" />
+                                  </Button>
+                                  <Button
+                                    variant="destructive"
+                                    size="icon"
+                                    className="h-7 w-7"
+                                    onClick={() => deleteMutation.mutate(entry.id)}
+                                    disabled={deleteMutation.isPending}
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </Button>
                                 </div>
-                                {!entry.isActive && (
-                                  <Badge variant="destructive" className="text-xs">Inactive</Badge>
-                                )}
                               </div>
-                              <div className="flex gap-2">
-                                <Button
-                                  variant="outline"
-                                  size="icon"
-                                  className="h-7 w-7"
-                                  onClick={() => openEditDialog(entry)}
-                                >
-                                  <Edit className="w-3 h-3" />
-                                </Button>
-                                <Button
-                                  variant="destructive"
-                                  size="icon"
-                                  className="h-7 w-7"
-                                  onClick={() => deleteMutation.mutate(entry.id)}
-                                  disabled={deleteMutation.isPending}
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                </Button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
+                            ))}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
                 </div>
               </div>
             );
@@ -351,20 +375,35 @@ export default function TrainingMethods() {
                     </button>
                   )}
 
-                  {/* Method Name */}
-                  <div>
-                    <Label className="text-xs">Method Name</Label>
-                    <Input
-                      value={row.name}
-                      onChange={e => updateRow(i, "name", e.target.value)}
-                      placeholder="e.g., Master Farmer"
-                      disabled={!!editingMethod}
-                    />
-                    {!editingMethod && i > 0 && (
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Same name = grouped together in the calculator
-                      </p>
-                    )}
+                  {/* Method Name + Order number */}
+                  <div className="grid grid-cols-4 gap-3">
+                    <div className="col-span-3">
+                      <Label className="text-xs">Method Name</Label>
+                      <Input
+                        value={row.name}
+                        onChange={e => updateRow(i, "name", e.target.value)}
+                        placeholder="e.g., Master Farmer"
+                        disabled={!!editingMethod}
+                      />
+                      {!editingMethod && i > 0 && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Same name = grouped together
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <Label className="text-xs">Order #</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={row.sortOrder}
+                        onChange={e => updateRow(i, "sortOrder", parseInt(e.target.value) || 1)}
+                        disabled={i > 0}
+                      />
+                      {i === 0 && (
+                        <p className="text-xs text-muted-foreground mt-1">Position</p>
+                      )}
+                    </div>
                   </div>
 
                   {/* Level range + price in a row */}
