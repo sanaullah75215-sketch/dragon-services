@@ -186,12 +186,18 @@ export const paymentMethods = pgTable("payment_methods", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+export interface PriceItem {
+  name: string;  // e.g., "Fighter Torso"
+  price: string; // e.g., "55M"
+}
+
 export interface ServiceOption {
   id: string;
   name: string;
   description: string;
-  price?: string;
+  price?: string;       // Legacy single price (kept for backward compat)
   duration?: string;
+  priceItems?: PriceItem[]; // New: list of items with individual prices
 }
 
 export const insertServiceSchema = createInsertSchema(services).omit({
