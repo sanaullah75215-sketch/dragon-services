@@ -3277,6 +3277,7 @@ async function handleSkillCalculatorCommand(message: any) {
         rangeStart: breakdown.rangeStart,
         rangeEnd: breakdown.rangeEnd,
         expNeeded: breakdown.expNeeded,
+        gpPerXp: breakdown.gpPerXp,
         originalCost: breakdown.originalCost,
         totalCost: methodFinalCost,
         discountAmount: methodDiscount,
