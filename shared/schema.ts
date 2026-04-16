@@ -198,6 +198,7 @@ export interface ServiceOption {
   price?: string;       // Legacy single price (kept for backward compat)
   duration?: string;
   priceItems?: PriceItem[]; // New: list of items with individual prices
+  note?: string;        // Note shown below prices in embed
 }
 
 export const insertServiceSchema = createInsertSchema(services).omit({
