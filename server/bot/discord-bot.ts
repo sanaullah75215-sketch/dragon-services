@@ -1138,35 +1138,34 @@ async function handleSelectMenu(interaction: any) {
         status: 'selected'
       });
 
-      const embed = new EmbedBuilder()
-        .setTitle(`🐲 Service Selected: ${selectedOption.name}`)
-        .setDescription(`**🔥 Excellent Choice!** You've selected our premium ${selectedOption.name} service.`)
-        .addFields(
-          { name: '📋 Service Details', value: selectedOption.description || 'Premium OSRS service', inline: false },
-          { name: '💰 Pricing', value: selectedOption.price || 'Contact for custom quote', inline: true },
-          { name: '⏱️ Timeline', value: selectedOption.duration || 'Varies by service', inline: true },
-          { name: '🎯 Service Category', value: service.name, inline: true }
-        )
-        .setColor(0xFF6B35)
-        .setThumbnail('https://oldschool.runescape.wiki/images/thumb/4/4e/Dragon_full_helm.png/130px-Dragon_full_helm.png')
-        .setFooter({
-          text: '🐲 Dragon Services • Contact support to proceed with order',
-          iconURL: 'https://oldschool.runescape.wiki/images/thumb/4/4e/Dragon_full_helm.png/21px-Dragon_full_helm.png'
-        })
-        .setTimestamp();
+      // Build price list from priceItems (new) or fall back to single price (legacy)
+      let priceText = '';
+      if (selectedOption.priceItems && selectedOption.priceItems.length > 0) {
+        priceText = selectedOption.priceItems
+          .map(item => `**${item.name}** - ${item.price}`)
+          .join('\n');
+      } else if (selectedOption.price) {
+        priceText = `**Price:** ${selectedOption.price}`;
+      } else {
+        priceText = 'Contact for quote';
+      }
 
-      const contactButton = new ButtonBuilder()
-        .setLabel('📞 Contact Support')
+      const embed = new EmbedBuilder()
+        .setTitle(`${service.icon} ${selectedOption.name}`)
+        .setDescription(priceText)
+        .setColor(0xFF6B35)
+        .setFooter({
+          text: '🐲 Dragon Services | Conquer the Game',
+          iconURL: 'https://oldschool.runescape.wiki/images/thumb/4/4e/Dragon_full_helm.png/21px-Dragon_full_helm.png'
+        });
+
+      const createTicketButton = new ButtonBuilder()
+        .setLabel('🎫 Create Ticket')
         .setStyle(ButtonStyle.Primary)
         .setCustomId(`contact_support_${serviceId}_${selectedOption.id}`);
 
-      const moreServicesButton = new ButtonBuilder()
-        .setLabel('🔄 View More Services')
-        .setStyle(ButtonStyle.Secondary)
-        .setCustomId('back_to_services');
-
       const actionRow = new ActionRowBuilder<ButtonBuilder>()
-        .addComponents(contactButton, moreServicesButton);
+        .addComponents(createTicketButton);
 
       await interaction.reply({
         embeds: [embed],
