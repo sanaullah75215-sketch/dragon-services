@@ -1089,13 +1089,20 @@ async function handleSelectMenu(interaction: any) {
         status: 'viewed'
       });
 
-      // Create service options embed
-      const embed = createServiceOptionsEmbed(service);
+      // Show ONLY the sub-services dropdown — no big embed
       const selectMenu = createServiceOptionsSelectMenu(service);
 
+      if (!selectMenu) {
+        await interaction.reply({
+          content: `**${service.icon} ${service.name}**\nNo options configured yet.`,
+          ephemeral: true
+        });
+        return;
+      }
+
       await interaction.reply({
-        embeds: [embed],
-        components: selectMenu ? [selectMenu] : [],
+        content: `**${service.icon} ${service.name} — Choose a service:**`,
+        components: [selectMenu],
         ephemeral: true
       });
 
@@ -1148,6 +1155,11 @@ async function handleSelectMenu(interaction: any) {
         priceText = `**Price:** ${selectedOption.price}`;
       } else {
         priceText = 'Contact for quote';
+      }
+
+      // Append note below prices if set
+      if (selectedOption.note && selectedOption.note.trim()) {
+        priceText += `\n\n📝 *${selectedOption.note.trim()}*`;
       }
 
       const embed = new EmbedBuilder()
