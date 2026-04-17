@@ -635,17 +635,8 @@ async function handleRatesCommand(message: any) {
   }
 }
 
-// Parse GP amount string: "100M" → 100, "1B" → 1000, "2.5B" → 2500 (returns millions)
-function parseGpAmount(amountStr: string): number | null {
-  const match = amountStr.trim().match(/^(\d+(?:\.\d+)?)([MmBb])$/);
-  if (!match) return null;
-  const num = parseFloat(match[1]);
-  const unit = match[2].toLowerCase();
-  return unit === 'b' ? num * 1000 : num;
-}
-
 // Handle !buy <amount> - Customer is buying GP from us → show our SELL rates
-async function handleGpBuyRates(message: any, amountM: number) {
+async function handleGpBuyRates(message: any, amountM: number, displayAmount: string) {
   try {
     const sellingMethods = await storage.getSellingMethods();
 
@@ -653,10 +644,6 @@ async function handleGpBuyRates(message: any, amountM: number) {
       await message.reply('❌ No sell rates configured. Please contact staff.');
       return;
     }
-
-    const displayAmount = amountM >= 1000
-      ? `${(amountM / 1000).toLocaleString('en-US', { maximumFractionDigits: 2 })}B`
-      : `${amountM.toLocaleString('en-US', { maximumFractionDigits: 2 })}M`;
 
     let ratesText = '';
     sellingMethods.forEach(method => {
@@ -669,7 +656,7 @@ async function handleGpBuyRates(message: any, amountM: number) {
 
     const embed = new EmbedBuilder()
       .setTitle(`📥 Buying ${displayAmount} OSRS GP`)
-      .setDescription(`Here's what you'll pay for **${displayAmount} GP**:\n\n${ratesText || 'No rates available'}`)
+      .setDescription(`Here's what you'll pay for **${displayAmount}**:\n\n${ratesText || 'No rates available'}`)
       .setColor(0x57F287)
       .setFooter({
         text: '🐲 Dragon Services | Create a ticket to order',
@@ -684,7 +671,7 @@ async function handleGpBuyRates(message: any, amountM: number) {
 }
 
 // Handle !sell <amount> - Customer is selling GP to us → show our BUY rates
-async function handleGpSellRates(message: any, amountM: number) {
+async function handleGpSellRates(message: any, amountM: number, displayAmount: string) {
   try {
     const buyingMethods = await storage.getBuyingMethods();
 
@@ -692,10 +679,6 @@ async function handleGpSellRates(message: any, amountM: number) {
       await message.reply('❌ No buy rates configured. Please contact staff.');
       return;
     }
-
-    const displayAmount = amountM >= 1000
-      ? `${(amountM / 1000).toLocaleString('en-US', { maximumFractionDigits: 2 })}B`
-      : `${amountM.toLocaleString('en-US', { maximumFractionDigits: 2 })}M`;
 
     const cryptoMethods = buyingMethods.filter(m => m.methodType === 'crypto');
     const nonCryptoMethods = buyingMethods.filter(m => m.methodType === 'non_crypto');
@@ -724,7 +707,7 @@ async function handleGpSellRates(message: any, amountM: number) {
 
     const embed = new EmbedBuilder()
       .setTitle(`📤 Selling ${displayAmount} OSRS GP`)
-      .setDescription(`Here's what you'll receive for **${displayAmount} GP**:\n\n${ratesText || 'No rates available'}`)
+      .setDescription(`Here's what you'll receive for **${displayAmount}**:\n\n${ratesText || 'No rates available'}`)
       .setColor(0xED4245)
       .setFooter({
         text: '🐲 Dragon Services | Create a ticket to sell',
@@ -841,9 +824,9 @@ async function handleRspsBuyCommand(message: any) {
     const firstArg = args[0] || '';
 
     // If first arg is a GP amount (e.g. 100M, 1B), show our sell rates (customer buying GP)
-    const gpAmount = parseGpAmount(firstArg);
-    if (gpAmount !== null && args.length === 1) {
-      await handleGpBuyRates(message, gpAmount);
+    const gpParsed = args.length === 1 ? parseGpAmount(firstArg) : null;
+    if (gpParsed !== null) {
+      await handleGpBuyRates(message, gpParsed.amountInM, gpParsed.displayText);
       return;
     }
 
@@ -875,9 +858,9 @@ async function handleRspsSellCommand(message: any) {
     const firstArg = args[0] || '';
 
     // If first arg is a GP amount (e.g. 100M, 1B), show our buy rates (customer selling GP)
-    const gpAmount = parseGpAmount(firstArg);
-    if (gpAmount !== null && args.length === 1) {
-      await handleGpSellRates(message, gpAmount);
+    const gpParsed = args.length === 1 ? parseGpAmount(firstArg) : null;
+    if (gpParsed !== null) {
+      await handleGpSellRates(message, gpParsed.amountInM, gpParsed.displayText);
       return;
     }
 
