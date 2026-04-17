@@ -300,6 +300,8 @@ export async function startDiscordBot() {
         await handleRspsBuyCommand(message);
       } else if (message.content.startsWith('!sell')) {
         await handleRspsSellCommand(message);
+      } else if (message.content.startsWith('!send ')) {
+        await handleSendCommand(message);
       }
     });
 
@@ -1082,6 +1084,139 @@ async function handleSytheVouchCommand(message: any) {
   } catch (error) {
     console.error('Error handling !sythevouch command:', error);
     await message.reply('❌ An error occurred while posting the Sythe vouch. Please try again.');
+  }
+}
+
+// !send <service option name> — posts a service price embed publicly in the channel
+async function handleSendCommand(message: any) {
+  try {
+    // Staff only
+    const member = message.member;
+    const isStaff = member?.permissions?.has('Administrator') ||
+      member?.roles?.cache?.some((r: any) => ['staff', 'admin', 'worker', 'moderator', 'mod'].includes(r.name.toLowerCase()));
+    if (!isStaff) {
+      await message.reply({ content: '❌ You need staff permissions to use this command.', ephemeral: true });
+      return;
+    }
+
+    const query = message.content.slice('!send '.length).trim().toLowerCase();
+    if (!query) {
+      await message.reply('❌ Usage: `!send <service name>`\nExample: `!send pest control` or `!send falador diary`');
+      return;
+    }
+
+    // Load all services
+    const services = await storage.getServices();
+
+    // Normalize helper — removes spaces, hyphens, apostrophes for comparison
+    const normalize = (s: string) => s.toLowerCase().replace(/[-'\s]+/g, '');
+
+    const normalizedQuery = normalize(query);
+    const queryWords = query.split(/\s+/);
+
+    let matchedService: any = null;
+    let matchedOption: any = null;
+    let bestScore = -1;
+
+    for (const service of services) {
+      if (!service.options || !Array.isArray(service.options)) continue;
+      for (const option of service.options as any[]) {
+        const optionNorm = normalize(option.name);
+        const serviceNorm = normalize(service.name);
+        // Combined: "servicename optionname"
+        const combined = normalize(`${service.name} ${option.name}`);
+        const combinedRev = normalize(`${option.name} ${service.name}`);
+
+        let score = 0;
+
+        if (optionNorm === normalizedQuery) score = 100;                          // exact option match
+        else if (combined === normalizedQuery) score = 99;                         // exact combined match
+        else if (combinedRev === normalizedQuery) score = 99;
+        else if (optionNorm.includes(normalizedQuery)) score = 80;                 // option contains query
+        else if (combined.includes(normalizedQuery)) score = 75;
+        else if (normalizedQuery.includes(optionNorm)) score = 70;                 // query contains option
+        else {
+          // All query words appear in combined service+option name
+          const allMatch = queryWords.every(w => combined.includes(normalize(w)));
+          if (allMatch) score = 60;
+          else {
+            // Most words match
+            const matchCount = queryWords.filter(w => combined.includes(normalize(w))).length;
+            if (matchCount > 0) score = matchCount * 10;
+          }
+        }
+
+        if (score > bestScore) {
+          bestScore = score;
+          matchedService = service;
+          matchedOption = option;
+        }
+      }
+    }
+
+    // Require a minimum score to avoid garbage matches
+    if (!matchedOption || bestScore < 10) {
+      // Show all available options
+      const allOptions: string[] = [];
+      for (const service of services) {
+        if (!service.options || !Array.isArray(service.options)) continue;
+        for (const option of service.options as any[]) {
+          allOptions.push(`• **${service.name}** → ${option.name}`);
+        }
+      }
+      const optionList = allOptions.slice(0, 30).join('\n');
+      await message.reply({
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0xFF6B35)
+            .setTitle('❌ Service not found')
+            .setDescription(`No match found for **"${query}"**\n\n**Available services:**\n${optionList}`)
+            .setFooter({ text: 'Usage: !send <service name> — e.g. !send pest control' })
+        ]
+      });
+      return;
+    }
+
+    // Build the same embed the dropdown shows
+    let priceText = '';
+    if (matchedOption.priceItems && matchedOption.priceItems.length > 0) {
+      priceText = matchedOption.priceItems
+        .map((item: any) => `**${item.name}** - ${item.price}`)
+        .join('\n');
+    } else if (matchedOption.price) {
+      priceText = `**Price:** ${matchedOption.price}`;
+    } else {
+      priceText = 'Contact for quote';
+    }
+
+    if (matchedOption.note && matchedOption.note.trim()) {
+      priceText += `\n\n📝 *${matchedOption.note.trim()}*`;
+    }
+
+    const embed = new EmbedBuilder()
+      .setTitle(`${matchedService.icon || '🐲'} ${matchedOption.name}`)
+      .setDescription(priceText)
+      .setColor(0xFF6B35)
+      .setFooter({
+        text: '🐲 Dragon Services | Conquer the Game',
+        iconURL: 'https://oldschool.runescape.wiki/images/thumb/4/4e/Dragon_full_helm.png/21px-Dragon_full_helm.png'
+      });
+
+    const createTicketButton = new ButtonBuilder()
+      .setLabel('🎫 Create Ticket')
+      .setStyle(ButtonStyle.Success)
+      .setCustomId(`create_ticket_${matchedService.id}_${matchedOption.id}`);
+
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(createTicketButton);
+
+    await message.channel.send({ embeds: [embed], components: [row] });
+
+    // Delete the command message so the channel stays clean
+    await message.delete().catch(() => {});
+
+  } catch (error) {
+    console.error('Error handling !send command:', error);
+    await message.reply('❌ An error occurred. Please try again.');
   }
 }
 
