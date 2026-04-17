@@ -7,6 +7,7 @@ const SYTHE_THREAD_URL = 'https://www.sythe.org/threads/4326552/osrs-services-vo
 const SYTHE_THREAD_RSS_URL = 'https://www.sythe.org/threads/4326552/index.rss';
 const SYTHE_VOUCH_CHANNEL_ID = '1414374807734190102';
 const SCRAPE_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+const FLARESOLVERR_URL = process.env.FLARESOLVERR_URL || 'http://flaresolverr:8191';
 
 interface ParsedVouch {
   postId: string;
@@ -17,155 +18,61 @@ interface ParsedVouch {
   postedAt: Date | null;
 }
 
-// Method 1: Jina Reader API — fetches through Jina's servers, handles anti-bot measures
-async function tryJinaReader(): Promise<ParsedVouch[]> {
-  const vouches: ParsedVouch[] = [];
+// Method 1: FlareSolverr — uses real Chrome browser to bypass CloudFlare
+async function tryFlareSolverr(): Promise<ParsedVouch[]> {
   try {
-    console.log('[SytheScraper] Trying Jina Reader API...');
-    const jinaUrl = `https://r.jina.ai/${SYTHE_THREAD_URL}`;
+    console.log('[SytheScraper] Trying FlareSolverr...');
 
-    const response = await fetch(jinaUrl, {
-      headers: {
-        'Accept': 'text/plain, text/markdown',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'X-Return-Format': 'markdown',
-      },
-      signal: AbortSignal.timeout(20000),
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60000);
+
+    const response = await fetch(`${FLARESOLVERR_URL}/v1`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        cmd: 'request.get',
+        url: SYTHE_THREAD_URL,
+        maxTimeout: 55000,
+      }),
+      signal: controller.signal,
     });
 
-    if (!response.ok) {
-      console.log(`[SytheScraper] Jina: ${response.status}`);
-      return vouches;
-    }
-
-    const text = await response.text();
-
-    if (!text || text.length < 100 || text.toLowerCase().includes('cloudflare') || text.toLowerCase().includes('just a moment')) {
-      console.log('[SytheScraper] Jina: CloudFlare or empty response');
-      return vouches;
-    }
-
-    console.log(`[SytheScraper] Jina: Got ${text.length} chars`);
-
-    // Parse the markdown output — look for username patterns and vouch content
-    // Jina formats forum posts like: "**Username** wrote:\n\ncontent" or similar
-    const lines = text.split('\n');
-    let currentAuthor: string | null = null;
-    let contentBuffer: string[] = [];
-
-    const flushVouch = () => {
-      if (currentAuthor && contentBuffer.length > 0) {
-        const content = contentBuffer.join('\n').trim();
-        if (content.length >= 10) {
-          const postId = 'jina-' + crypto.createHash('md5').update(`${currentAuthor}:${content.substring(0, 100)}`).digest('hex').substring(0, 12);
-          vouches.push({
-            postId,
-            authorUsername: currentAuthor,
-            authorProfileUrl: null,
-            vouchContent: content.substring(0, 2000),
-            postUrl: SYTHE_THREAD_URL,
-            postedAt: null,
-          });
-        }
-      }
-      contentBuffer = [];
-    };
-
-    // Detect author lines — usually bold names or lines that look like "**Name**" or "# Name"
-    const authorPatterns = [
-      /^\*\*([A-Za-z0-9_\- .]{2,30})\*\*\s*(?:wrote|said|posted|replied)?:?\s*$/i,
-      /^#{1,3}\s+([A-Za-z0-9_\- .]{2,30})\s*$/,
-      /^>?\s*([A-Za-z0-9_\- .]{2,30})\s+(?:said|wrote):/i,
-    ];
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) {
-        if (contentBuffer.length > 0) contentBuffer.push('');
-        continue;
-      }
-
-      let matchedAuthor: string | null = null;
-      for (const pattern of authorPatterns) {
-        const m = trimmed.match(pattern);
-        if (m) { matchedAuthor = m[1].trim(); break; }
-      }
-
-      if (matchedAuthor) {
-        flushVouch();
-        currentAuthor = matchedAuthor;
-      } else if (currentAuthor) {
-        contentBuffer.push(trimmed);
-      }
-    }
-    flushVouch();
-
-    if (vouches.length > 0) {
-      console.log(`[SytheScraper] Jina: Parsed ${vouches.length} potential vouches`);
-    } else {
-      // Fallback: split by long separator lines and treat each block as a post
-      const blocks = text.split(/\n(?:-{3,}|={3,}|\*{3,})\n/);
-      for (const block of blocks) {
-        const trimmedBlock = block.trim();
-        if (trimmedBlock.length < 15) continue;
-        // Try to find an author name at the start
-        const firstLine = trimmedBlock.split('\n')[0].replace(/[*#>]/g, '').trim();
-        const restContent = trimmedBlock.split('\n').slice(1).join('\n').trim();
-        if (firstLine.length >= 2 && firstLine.length <= 40 && restContent.length >= 10) {
-          const postId = 'jina-' + crypto.createHash('md5').update(`${firstLine}:${restContent.substring(0, 100)}`).digest('hex').substring(0, 12);
-          vouches.push({
-            postId,
-            authorUsername: firstLine,
-            authorProfileUrl: null,
-            vouchContent: restContent.substring(0, 2000),
-            postUrl: SYTHE_THREAD_URL,
-            postedAt: null,
-          });
-        }
-      }
-      if (vouches.length > 0) {
-        console.log(`[SytheScraper] Jina (block fallback): Parsed ${vouches.length} potential vouches`);
-      }
-    }
-  } catch (error) {
-    console.log('[SytheScraper] Jina error:', (error as Error).message);
-  }
-  return vouches;
-}
-
-// Method 2: AllOrigins proxy — fetches through their server, returns raw HTML
-async function tryAllOrigins(): Promise<ParsedVouch[]> {
-  const vouches: ParsedVouch[] = [];
-  try {
-    console.log('[SytheScraper] Trying AllOrigins proxy...');
-    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(SYTHE_THREAD_URL)}`;
-
-    const response = await fetch(proxyUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
-      signal: AbortSignal.timeout(20000),
-    });
+    clearTimeout(timeout);
 
     if (!response.ok) {
-      console.log(`[SytheScraper] AllOrigins: ${response.status}`);
-      return vouches;
+      console.log(`[SytheScraper] FlareSolverr: HTTP ${response.status}`);
+      return [];
     }
 
-    const html = await response.text();
+    const data = await response.json() as any;
 
-    if (!html || html.length < 200 || html.toLowerCase().includes('just a moment') || html.toLowerCase().includes('cloudflare')) {
-      console.log('[SytheScraper] AllOrigins: CloudFlare blocked');
-      return vouches;
+    if (data.status !== 'ok' || !data.solution?.response) {
+      console.log(`[SytheScraper] FlareSolverr: Bad response — ${data.message || data.status}`);
+      return [];
     }
 
-    console.log(`[SytheScraper] AllOrigins: Got ${html.length} chars — parsing HTML`);
+    const html = data.solution.response as string;
+
+    if (html.length < 500) {
+      console.log('[SytheScraper] FlareSolverr: Response too short, likely blocked');
+      return [];
+    }
+
+    console.log(`[SytheScraper] FlareSolverr: Got ${html.length} chars ✅`);
     return parseXenForoHtml(html);
+
   } catch (error) {
-    console.log('[SytheScraper] AllOrigins error:', (error as Error).message);
+    const msg = (error as Error).message;
+    if (msg.includes('ECONNREFUSED') || msg.includes('fetch')) {
+      console.log('[SytheScraper] FlareSolverr: Not reachable (container may be starting up)');
+    } else {
+      console.log('[SytheScraper] FlareSolverr error:', msg);
+    }
+    return [];
   }
-  return vouches;
 }
 
-// Method 3: RSS feed
+// Method 2: RSS feed (sometimes works)
 async function tryRssFeed(): Promise<ParsedVouch[]> {
   const vouches: ParsedVouch[] = [];
   const rssUrls = [
@@ -176,18 +83,24 @@ async function tryRssFeed(): Promise<ParsedVouch[]> {
   for (const rssUrl of rssUrls) {
     try {
       console.log(`[SytheScraper] Trying RSS: ${rssUrl}`);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+
       const response = await fetch(rssUrl, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (compatible; Feedfetcher-Google; +http://www.google.com/feedfetcher.html)',
           'Accept': 'application/rss+xml, application/xml, text/xml, */*',
         },
-        signal: AbortSignal.timeout(15000),
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
 
       if (!response.ok) { console.log(`[SytheScraper] RSS ${response.status}`); continue; }
 
       const xml = await response.text();
-      if (xml.includes('cloudflare') || xml.includes('challenge')) { console.log('[SytheScraper] RSS: CF blocked'); continue; }
+      if (xml.toLowerCase().includes('cloudflare') || xml.toLowerCase().includes('just a moment')) {
+        console.log('[SytheScraper] RSS: CF blocked'); continue;
+      }
 
       const itemPattern = /<item>([\s\S]*?)<\/item>/gi;
       let match;
@@ -203,7 +116,11 @@ async function tryRssFeed(): Promise<ParsedVouch[]> {
         const contentMatch = itemContent.match(/<description>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/description>/i) || itemContent.match(/<content:encoded>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/content:encoded>/i);
         let vouchContent = '';
         if (contentMatch) {
-          vouchContent = contentMatch[1].replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/\n{3,}/g, '\n\n').trim();
+          vouchContent = contentMatch[1]
+            .replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '')
+            .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#039;/g, "'")
+            .replace(/\n{3,}/g, '\n\n').trim();
         }
         if (!vouchContent || vouchContent.length < 10) continue;
         const dateMatch = itemContent.match(/<pubDate>([^<]+)<\/pubDate>/i);
@@ -223,49 +140,70 @@ async function tryRssFeed(): Promise<ParsedVouch[]> {
   return vouches;
 }
 
-// Parse XenForo HTML structure for posts
+// Parse XenForo 2.x HTML to extract posts
 function parseXenForoHtml(html: string): ParsedVouch[] {
   const vouches: ParsedVouch[] = [];
 
-  // XenForo post patterns
-  const postPatterns = [
-    /<article[^>]*class="[^"]*message[^"]*"[^>]*data-author="([^"]+)"[^>]*>([\s\S]*?)<\/article>/gi,
-    /<div[^>]*class="[^"]*bbWrapper[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
-    /<blockquote[^>]*class="[^"]*message[^"]*"[^>]*>([\s\S]*?)<\/blockquote>/gi,
-  ];
-
-  // Try article-based extraction first (XenForo 2.x)
-  const articlePattern = /<article[^>]*class="[^"]*message[^"]*"[^>]*data-author="([^"]+)"[^>]*data-content="[^"]*post-(\d+)"[^>]*>([\s\S]*?)<\/article>/gi;
+  // XenForo 2.x: <article class="message ..." data-author="Username" data-content="post-XXXXXX">
+  const articlePattern = /<article[^>]*data-author="([^"]+)"[^>]*data-content="[^"]*post-(\d+)"[^>]*>([\s\S]*?)<\/article>/gi;
   let match;
+
   while ((match = articlePattern.exec(html)) !== null) {
     const authorUsername = match[1];
     const postId = match[2];
-    const articleContent = match[3];
-    const contentMatch = articleContent.match(/<div[^>]*class="[^"]*bbWrapper[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
-    if (!contentMatch) continue;
-    const vouchContent = contentMatch[1].replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/\n{3,}/g, '\n\n').trim();
+    const articleHtml = match[3];
+
+    // Find the message body — bbWrapper div contains the actual post text
+    const bbMatch = articleHtml.match(/<div[^>]*class="[^"]*bbWrapper[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
+    if (!bbMatch) continue;
+
+    const vouchContent = bbMatch[1]
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#039;/g, "'")
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+
     if (vouchContent.length < 10) continue;
-    vouches.push({ postId, authorUsername, authorProfileUrl: null, vouchContent: vouchContent.substring(0, 2000), postUrl: `${SYTHE_THREAD_URL}post-${postId}`, postedAt: null });
+
+    // Try to get post date
+    const dateMatch = articleHtml.match(/<time[^>]*datetime="([^"]+)"[^>]*>/i);
+    const postedAt = dateMatch ? new Date(dateMatch[1]) : null;
+
+    vouches.push({
+      postId,
+      authorUsername,
+      authorProfileUrl: `https://www.sythe.org/members/${authorUsername.toLowerCase().replace(/\s+/g, '-')}/`,
+      vouchContent: vouchContent.substring(0, 2000),
+      postUrl: `${SYTHE_THREAD_URL}post-${postId}`,
+      postedAt,
+    });
   }
 
   if (vouches.length > 0) {
-    console.log(`[SytheScraper] HTML: Found ${vouches.length} posts via article pattern`);
+    console.log(`[SytheScraper] HTML parser: Found ${vouches.length} posts`);
+  } else {
+    console.log('[SytheScraper] HTML parser: No posts found (thread structure may differ)');
   }
+
   return vouches;
 }
 
 export async function scrapeSytheVouches(): Promise<ParsedVouch[]> {
-  // Try methods in order: Jina (CloudFlare bypass) → AllOrigins → RSS
-  let vouches = await tryJinaReader();
+  // FlareSolverr first (real Chrome browser, bypasses CloudFlare)
+  let vouches = await tryFlareSolverr();
   if (vouches.length > 0) return vouches;
 
-  vouches = await tryAllOrigins();
-  if (vouches.length > 0) return vouches;
-
+  // RSS fallback
   vouches = await tryRssFeed();
   if (vouches.length > 0) return vouches;
 
-  console.log('[SytheScraper] All methods blocked. Use !sythevouch to post manually.');
+  console.log('[SytheScraper] All methods failed. Use !sythevouch to post manually.');
   return [];
 }
 
@@ -305,7 +243,7 @@ export async function processNewVouches(client: Client): Promise<number> {
         const message = await channel.send({ embeds: [embed] });
         await storage.markSytheVouchPosted(newVouch.id, message.id);
         newVouchCount++;
-        console.log(`[SytheScraper] Posted vouch from ${vouch.authorUsername}`);
+        console.log(`[SytheScraper] ✅ Posted vouch from ${vouch.authorUsername} (post-${vouch.postId})`);
         await new Promise(resolve => setTimeout(resolve, 1000));
       } catch (sendError) {
         console.error('[SytheScraper] Failed to send embed:', sendError);
@@ -313,7 +251,7 @@ export async function processNewVouches(client: Client): Promise<number> {
     }
 
     if (newVouchCount > 0) {
-      console.log(`[SytheScraper] Posted ${newVouchCount} new vouches`);
+      console.log(`[SytheScraper] Posted ${newVouchCount} new vouches total`);
     }
   } catch (error) {
     console.error('[SytheScraper] Error processing vouches:', error);
@@ -358,12 +296,13 @@ let scrapeIntervalId: NodeJS.Timeout | null = null;
 export function startSytheScraper(client: Client): void {
   stopSytheScraper();
 
-  console.log('[SytheScraper] Starting (Jina → AllOrigins → RSS, 10 min interval)...');
+  console.log('[SytheScraper] Starting (FlareSolverr → RSS, 10 min interval)...');
 
+  // Wait 60s on startup to let FlareSolverr container fully boot
   setTimeout(async () => {
     console.log('[SytheScraper] Running initial scrape...');
     await processNewVouches(client);
-  }, 30000);
+  }, 60000);
 
   scrapeIntervalId = setInterval(async () => {
     await processNewVouches(client);
