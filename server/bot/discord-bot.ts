@@ -635,6 +635,109 @@ async function handleRatesCommand(message: any) {
   }
 }
 
+// Parse GP amount string: "100M" → 100, "1B" → 1000, "2.5B" → 2500 (returns millions)
+function parseGpAmount(amountStr: string): number | null {
+  const match = amountStr.trim().match(/^(\d+(?:\.\d+)?)([MmBb])$/);
+  if (!match) return null;
+  const num = parseFloat(match[1]);
+  const unit = match[2].toLowerCase();
+  return unit === 'b' ? num * 1000 : num;
+}
+
+// Handle !buy <amount> - Customer is buying GP from us → show our SELL rates
+async function handleGpBuyRates(message: any, amountM: number) {
+  try {
+    const sellingMethods = await storage.getSellingMethods();
+
+    if (!sellingMethods || sellingMethods.length === 0) {
+      await message.reply('❌ No sell rates configured. Please contact staff.');
+      return;
+    }
+
+    const displayAmount = amountM >= 1000
+      ? `${(amountM / 1000).toLocaleString('en-US', { maximumFractionDigits: 2 })}B`
+      : `${amountM.toLocaleString('en-US', { maximumFractionDigits: 2 })}M`;
+
+    let ratesText = '';
+    sellingMethods.forEach(method => {
+      if (method.sellingRate) {
+        const rate = parseFloat(method.sellingRate.toString());
+        const total = (amountM * rate).toFixed(2);
+        ratesText += `${method.icon || '💱'} **${method.methodName}** — $${rate}/M → **$${total}**\n`;
+      }
+    });
+
+    const embed = new EmbedBuilder()
+      .setTitle(`📥 Buying ${displayAmount} OSRS GP`)
+      .setDescription(`Here's what you'll pay for **${displayAmount} GP**:\n\n${ratesText || 'No rates available'}`)
+      .setColor(0x57F287)
+      .setFooter({
+        text: '🐲 Dragon Services | Create a ticket to order',
+        iconURL: 'https://oldschool.runescape.wiki/images/thumb/4/4e/Dragon_full_helm.png/21px-Dragon_full_helm.png'
+      });
+
+    await message.reply({ embeds: [embed] });
+  } catch (error) {
+    console.error('Error handling !buy GP rates:', error);
+    await message.reply('❌ An error occurred. Please try again.');
+  }
+}
+
+// Handle !sell <amount> - Customer is selling GP to us → show our BUY rates
+async function handleGpSellRates(message: any, amountM: number) {
+  try {
+    const buyingMethods = await storage.getBuyingMethods();
+
+    if (!buyingMethods || buyingMethods.length === 0) {
+      await message.reply('❌ No buy rates configured. Please contact staff.');
+      return;
+    }
+
+    const displayAmount = amountM >= 1000
+      ? `${(amountM / 1000).toLocaleString('en-US', { maximumFractionDigits: 2 })}B`
+      : `${amountM.toLocaleString('en-US', { maximumFractionDigits: 2 })}M`;
+
+    const cryptoMethods = buyingMethods.filter(m => m.methodType === 'crypto');
+    const nonCryptoMethods = buyingMethods.filter(m => m.methodType === 'non_crypto');
+
+    let ratesText = '';
+    if (cryptoMethods.length > 0) {
+      ratesText += '**🪙 Crypto:**\n';
+      cryptoMethods.forEach(method => {
+        if (method.buyingRate) {
+          const rate = parseFloat(method.buyingRate.toString());
+          const total = (amountM * rate).toFixed(2);
+          ratesText += `${method.icon || '💱'} **${method.methodName}** — $${rate}/M → **$${total}**\n`;
+        }
+      });
+    }
+    if (nonCryptoMethods.length > 0) {
+      ratesText += '\n**💳 Other Methods:**\n';
+      nonCryptoMethods.forEach(method => {
+        if (method.buyingRate) {
+          const rate = parseFloat(method.buyingRate.toString());
+          const total = (amountM * rate).toFixed(2);
+          ratesText += `${method.icon || '💱'} **${method.methodName}** — $${rate}/M → **$${total}**\n`;
+        }
+      });
+    }
+
+    const embed = new EmbedBuilder()
+      .setTitle(`📤 Selling ${displayAmount} OSRS GP`)
+      .setDescription(`Here's what you'll receive for **${displayAmount} GP**:\n\n${ratesText || 'No rates available'}`)
+      .setColor(0xED4245)
+      .setFooter({
+        text: '🐲 Dragon Services | Create a ticket to sell',
+        iconURL: 'https://oldschool.runescape.wiki/images/thumb/4/4e/Dragon_full_helm.png/21px-Dragon_full_helm.png'
+      });
+
+    await message.reply({ embeds: [embed] });
+  } catch (error) {
+    console.error('Error handling !sell GP rates:', error);
+    await message.reply('❌ An error occurred. Please try again.');
+  }
+}
+
 // Handle !payment command - Display payment methods with dropdown
 async function handlePaymentCommand(message: any) {
   try {
@@ -735,19 +838,29 @@ async function handleRspsBuyCommand(message: any) {
     }
 
     const args = message.content.slice('!buy'.length).trim().split(/\s+/);
-    if (args.length >= 3 && args[0]) {
-      const rspsName = args[0];
+    const firstArg = args[0] || '';
+
+    // If first arg is a GP amount (e.g. 100M, 1B), show our sell rates (customer buying GP)
+    const gpAmount = parseGpAmount(firstArg);
+    if (gpAmount !== null && args.length === 1) {
+      await handleGpBuyRates(message, gpAmount);
+      return;
+    }
+
+    // Otherwise treat as RSPS ticket
+    if (args.length >= 3 && firstArg) {
+      const rspsName = firstArg;
       const amount = args[1];
       const paymentMethod = args.slice(2).join(' ');
       await processRspsTicket(message, 'BUYING', rspsName, amount, paymentMethod);
     } else {
       await message.reply({
-        content: '🟢 **RSPS Buy Ticket**\n\n**Format:** `!buy <RSPS Name> <Amount> <Payment Method>`\n**Example:** `!buy SpawnPK 500M PayPal`\n**Example:** `!buy Roatz 1B Bitcoin`'
+        content: '📥 **Buy OSRS GP**\n`!buy 100M` or `!buy 1B` — see our rates & total price\n\n🟢 **RSPS Buy Ticket**\n`!buy <RSPS Name> <Amount> <Payment Method>`\nExample: `!buy SpawnPK 500M PayPal`'
       });
     }
   } catch (error) {
     console.error('Error handling !buy command:', error);
-    await message.reply('❌ An error occurred. Usage: `!buy <RSPS Name> <Amount> <Payment Method>`\nExample: `!buy SpawnPK 500M PayPal`');
+    await message.reply('❌ An error occurred. Usage: `!buy 100M` or `!buy <RSPS Name> <Amount> <Method>`');
   }
 }
 
@@ -759,19 +872,29 @@ async function handleRspsSellCommand(message: any) {
     }
 
     const args = message.content.slice('!sell'.length).trim().split(/\s+/);
+    const firstArg = args[0] || '';
+
+    // If first arg is a GP amount (e.g. 100M, 1B), show our buy rates (customer selling GP)
+    const gpAmount = parseGpAmount(firstArg);
+    if (gpAmount !== null && args.length === 1) {
+      await handleGpSellRates(message, gpAmount);
+      return;
+    }
+
+    // Otherwise treat as RSPS ticket
     if (args.length >= 3) {
-      const rspsName = args[0];
+      const rspsName = firstArg;
       const amount = args[1];
       const paymentMethod = args.slice(2).join(' ');
       await processRspsTicket(message, 'SELLING', rspsName, amount, paymentMethod);
     } else {
       await message.reply({
-        content: '💰 **RSPS Sell Ticket**\n\n**Format:** `!sell <RSPS Name> <Amount> <Payment Method>`\n**Example:** `!sell SpawnPK 500M PayPal`'
+        content: '📤 **Sell OSRS GP**\n`!sell 100M` or `!sell 1B` — see our rates & total price\n\n💰 **RSPS Sell Ticket**\n`!sell <RSPS Name> <Amount> <Payment Method>`\nExample: `!sell SpawnPK 500M PayPal`'
       });
     }
   } catch (error) {
     console.error('Error handling !sell command:', error);
-    await message.reply('❌ An error occurred. Usage: `!sell <RSPS Name> <Amount> <Payment Method>`\nExample: `!sell SpawnPK 500M PayPal`');
+    await message.reply('❌ An error occurred. Usage: `!sell 100M` or `!sell <RSPS Name> <Amount> <Method>`');
   }
 }
 
