@@ -1,4 +1,12 @@
 services:
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    restart: always
+    environment:
+      LOG_LEVEL: info
+    ports:
+      - "8191:8191"
+
   db:
     image: postgres:16-alpine
     restart: always
@@ -27,9 +35,12 @@ services:
       SESSION_SECRET: ${SESSION_SECRET}
       VOUCH_CHANNEL_ID: ${VOUCH_CHANNEL_ID:-1414374874809368656}
       WITHDRAWAL_NOTIFICATION_CHANNEL_ID: ${WITHDRAWAL_NOTIFICATION_CHANNEL_ID:-1449760619292131398}
+      FLARESOLVERR_URL: http://flaresolverr:8191
     depends_on:
       db:
         condition: service_healthy
+      flaresolverr:
+        condition: service_started
     entrypoint: ["/bin/sh", "/app/docker-entrypoint.sh"]
 
 volumes:
