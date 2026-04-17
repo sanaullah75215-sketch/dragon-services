@@ -4,7 +4,6 @@ import { storage } from '../storage';
 import { getCustomerRank, applyCustomerDiscount, getCustomerDiscount, formatGPAmount, getRankProgress, CUSTOMER_RANKS } from "@shared/ranks";
 import { createServicesEmbed, createServicesSelectMenu, createServiceOptionsEmbed, createServiceOptionsSelectMenu, createCalculatorEmbed, createCalculatorComponents, createServiceSelectionEmbed, createServiceSelectionComponents, createCalculationResultEmbed, createSkillCalculatorEmbed, createQuestCalculatorEmbed, createMultiQuestCalculatorEmbed } from './embeds';
 import { createSpecialOffersEmbed, createSingleOfferEmbed, createOffersSelectMenu, createOfferActionButtons } from './offers-embeds';
-import { startSytheScraper } from './sythe-scraper';
 
 let client: Client;
 let botStatus = {
@@ -233,8 +232,7 @@ export async function startDiscordBot() {
       // Register slash commands
       await registerSlashCommands(readyClient.user.id);
       
-      // Start Sythe forum vouch scraper
-      startSytheScraper(client);
+
     });
 
     // Handle interactions
