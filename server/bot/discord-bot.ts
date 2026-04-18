@@ -3707,23 +3707,52 @@ async function handleQuestCalculatorCommand(message: any) {
       return;
     }
 
-    // Get pricing for all found quests
+    // Get pricing from services dropdown (single source of truth)
+    const allServices = await storage.getServices();
+
+    // Helper: find a service option matching a quest name (fuzzy)
+    const findServiceOptionForQuest = (questName: string) => {
+      const norm = (s: string) => s.toLowerCase().replace(/[-'\s]+/g, '');
+      const qn = norm(questName);
+      for (const service of allServices) {
+        if (!service.options || !Array.isArray(service.options)) continue;
+        for (const option of service.options as any[]) {
+          const on = norm(option.name);
+          if (on === qn || on.includes(qn) || qn.includes(on)) {
+            return option;
+          }
+        }
+      }
+      return null;
+    };
+
     const questsWithPricing = [];
 
     for (const quest of foundQuests) {
-      const questPricing = await storage.getQuestPricingByQuest(quest.id);
-      const activePricing = questPricing.filter(p => p.isActive).sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
-      
-      if (activePricing.length > 0) {
-        questsWithPricing.push({
-          quest,
-          pricingOptions: activePricing
-        });
+      const serviceOption = findServiceOptionForQuest(quest.name);
+
+      if (serviceOption) {
+        // Use priceItems from service option
+        const priceItems: any[] = serviceOption.priceItems || [];
+        if (serviceOption.price && priceItems.length === 0) {
+          priceItems.push({ name: 'Standard', price: serviceOption.price });
+        }
+        if (priceItems.length > 0) {
+          questsWithPricing.push({ quest, priceItems, note: serviceOption.note || null });
+        }
+      } else {
+        // Fallback to questPricing table for backward compatibility
+        const questPricing = await storage.getQuestPricingByQuest(quest.id);
+        const activePricing = questPricing.filter(p => p.isActive).sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+        if (activePricing.length > 0) {
+          const priceItems = activePricing.map(p => ({ name: p.serviceType, price: `${(parseFloat(p.price) / 1000000).toFixed(1)}M` }));
+          questsWithPricing.push({ quest, priceItems, note: null });
+        }
       }
     }
 
     if (questsWithPricing.length === 0) {
-      await message.reply(`❌ **No pricing found for any of the selected quests!** Please contact an admin.`);
+      await message.reply(`❌ **No pricing found for any of the selected quests!**\nMake sure the quest name matches an option in the services dropdown.`);
       return;
     }
 
@@ -3737,35 +3766,28 @@ async function handleQuestCalculatorCommand(message: any) {
       // User doesn't have wallet yet, no discount applied
     }
 
-    // Apply rank-based discounts to quest pricing
+    // Apply rank-based discounts to priceItems
     const questsWithDiscounts = questsWithPricing.map(questData => {
-      const discountedPricing = questData.pricingOptions.map(pricing => {
-        const originalPrice = parseFloat(pricing.price);
-        
+      const discountedItems = questData.priceItems.map((item: any) => {
+        // Parse price string like "50M", "1.5B", "500K"
+        const parsePrice = (p: string): number => {
+          const s = p.toString().toLowerCase().replace(/\s+/g, '');
+          if (s.includes('b')) return parseFloat(s) * 1000000000;
+          if (s.includes('m')) return parseFloat(s) * 1000000;
+          if (s.includes('k')) return parseFloat(s) * 1000;
+          return parseFloat(s);
+        };
+
+        const originalPrice = parsePrice(item.price);
         if (userWallet && userWallet.totalSpentGp > 0) {
           const discount = applyCustomerDiscount(originalPrice, userWallet.totalSpentGp, userWallet.manualRank);
-          return {
-            ...pricing,
-            originalPrice,
-            finalPrice: discount.finalPrice,
-            discountAmount: discount.discountAmount,
-            discountPercentage: discount.discountPercentage
-          };
+          return { ...item, originalPrice, finalPrice: discount.finalPrice, discountAmount: discount.discountAmount, discountPercentage: discount.discountPercentage };
         } else {
-          return {
-            ...pricing,
-            originalPrice,
-            finalPrice: originalPrice,
-            discountAmount: 0,
-            discountPercentage: 0
-          };
+          return { ...item, originalPrice, finalPrice: originalPrice, discountAmount: 0, discountPercentage: 0 };
         }
       });
 
-      return {
-        ...questData,
-        pricingOptions: discountedPricing
-      };
+      return { ...questData, priceItems: discountedItems };
     });
 
     // Update command usage
