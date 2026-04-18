@@ -3707,52 +3707,27 @@ async function handleQuestCalculatorCommand(message: any) {
       return;
     }
 
-    // Get pricing from services dropdown (single source of truth)
-    const allServices = await storage.getServices();
-
-    // Helper: find a service option matching a quest name (fuzzy)
-    const findServiceOptionForQuest = (questName: string) => {
-      const norm = (s: string) => s.toLowerCase().replace(/[-'\s]+/g, '');
-      const qn = norm(questName);
-      for (const service of allServices) {
-        if (!service.options || !Array.isArray(service.options)) continue;
-        for (const option of service.options as any[]) {
-          const on = norm(option.name);
-          if (on === qn || on.includes(qn) || qn.includes(on)) {
-            return option;
-          }
-        }
-      }
-      return null;
-    };
-
+    // Get pricing from quest pricing table
     const questsWithPricing = [];
 
     for (const quest of foundQuests) {
-      const serviceOption = findServiceOptionForQuest(quest.name);
-
-      if (serviceOption) {
-        // Use priceItems from service option
-        const priceItems: any[] = serviceOption.priceItems || [];
-        if (serviceOption.price && priceItems.length === 0) {
-          priceItems.push({ name: 'Standard', price: serviceOption.price });
-        }
-        if (priceItems.length > 0) {
-          questsWithPricing.push({ quest, priceItems, note: serviceOption.note || null });
-        }
-      } else {
-        // Fallback to questPricing table for backward compatibility
-        const questPricing = await storage.getQuestPricingByQuest(quest.id);
-        const activePricing = questPricing.filter(p => p.isActive).sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
-        if (activePricing.length > 0) {
-          const priceItems = activePricing.map(p => ({ name: p.serviceType, price: `${(parseFloat(p.price) / 1000000).toFixed(1)}M` }));
-          questsWithPricing.push({ quest, priceItems, note: null });
-        }
+      const questPricingRows = await storage.getQuestPricingByQuest(quest.id);
+      const activePricing = questPricingRows.filter(p => p.isActive).sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+      if (activePricing.length > 0) {
+        const formatGp = (val: string | number) => {
+          const n = typeof val === 'string' ? parseFloat(val) : val;
+          if (n >= 1000000000) return `${(n / 1000000000).toFixed(1)}B`;
+          if (n >= 1000000)    return `${(n / 1000000).toFixed(1)}M`;
+          if (n >= 1000)       return `${(n / 1000).toFixed(1)}K`;
+          return `${n}`;
+        };
+        const priceItems = activePricing.map(p => ({ name: p.serviceType || 'Standard', price: formatGp(p.price) }));
+        questsWithPricing.push({ quest, priceItems, note: null });
       }
     }
 
     if (questsWithPricing.length === 0) {
-      await message.reply(`❌ **No pricing found for any of the selected quests!**\nMake sure the quest name matches an option in the services dropdown.`);
+      await message.reply(`❌ **No pricing found for any of the selected quests!**\nAdd prices in the Quest Management dashboard first.`);
       return;
     }
 
