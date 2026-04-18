@@ -8,14 +8,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Badge } from "@/components/ui/badge";
 import { Edit, Plus, Trash2, DollarSign } from "lucide-react";
 import { queryClient } from "@/lib/queryClient";
 
 interface Quest {
   id: string;
   name: string;
-  category: string;
   description: string;
   requirements: string;
   icon: string;
@@ -174,7 +172,6 @@ export default function QuestManagement() {
     
     const questData = {
       name: formData.get('name') as string,
-      category: formData.get('category') as string,
       description: formData.get('description') as string,
       requirements: formData.get('requirements') as string,
       icon: formData.get('icon') as string,
@@ -294,22 +291,6 @@ export default function QuestManagement() {
                     </div>
                     
                     <div>
-                      <Label htmlFor="category">Category</Label>
-                      <Select name="category" defaultValue={editingQuest?.category} required>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select category" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="novice">Novice</SelectItem>
-                          <SelectItem value="intermediate">Intermediate</SelectItem>
-                          <SelectItem value="experienced">Experienced</SelectItem>
-                          <SelectItem value="master">Master</SelectItem>
-                          <SelectItem value="grandmaster">Grandmaster</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div>
                       <Label htmlFor="icon">Icon/Emoji</Label>
                       <Input 
                         id="icon" 
@@ -360,9 +341,6 @@ export default function QuestManagement() {
                     <span className="text-2xl">{quest.icon}</span>
                     <div>
                       <div className="font-medium">{quest.name}</div>
-                      <Badge variant="outline" className="text-xs">
-                        {quest.category}
-                      </Badge>
                     </div>
                   </div>
                   <div className="flex space-x-2">
