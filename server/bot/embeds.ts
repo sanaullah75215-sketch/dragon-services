@@ -459,54 +459,42 @@ function getMethodEmoji(methodName: string): string {
 
 // Quest calculator embed
 export function createQuestCalculatorEmbed(data: any) {
-  const { quest, pricingOptions } = data;
-  
-  // Format numbers exactly like the skill calculator
-  const formatGP = (gp: number) => {
-    if (gp >= 1000000) {
-      return `${(gp / 1000000).toFixed(1)}M`;
-    } else if (gp >= 1000) {
-      return `${(gp / 1000).toFixed(1)}K`;
-    } else {
-      return `${Math.round(gp)}`;
-    }
-  };
+  const { quest, priceItems, note } = data;
 
   const embed = new EmbedBuilder()
     .setTitle(`🗡️ ${quest.name} Quest`)
     .setColor(0xFF6B35)
     .setThumbnail('https://oldschool.runescape.wiki/images/thumb/4/4e/Dragon_full_helm.png/130px-Dragon_full_helm.png');
 
-  // Header with quest info
-  let description = `**Quest:** ${quest.name}\n**Category:** ${quest.category}\n\n`;
-  
-  // Since we only have Standard pricing now, simplify the display
-  if (pricingOptions.length > 0) {
-    const pricing = pricingOptions[0]; // Should only be Standard now
-    const price = parseFloat(pricing.price);
-    const priceFormatted = formatGP(price);
-    
-    description += `📋 **Standard Service**\n`;
-    if (pricing.description) {
-      description += `⚡ ${pricing.description}\n`;
+  let description = `**Quest:** ${quest.name}\n\n`;
+
+  if (priceItems && priceItems.length > 0) {
+    description += `💰 **Pricing:**\n`;
+    for (const item of priceItems) {
+      if (item.discountPercentage > 0) {
+        description += `**${item.name}** — ~~${item.price}~~ → ${(item.finalPrice / 1000000).toFixed(1)}M GP (${item.discountPercentage}% off)\n`;
+      } else {
+        description += `**${item.name}** — ${item.price}\n`;
+      }
     }
-    description += `💰 ${priceFormatted} GP\n\n`;
+    description += '\n';
   }
 
-  // Add important pricing disclaimers
+  if (note) {
+    description += `📝 *${note}*\n\n`;
+  }
+
   description += `⚠️ **Important Notes:**\n`;
-  description += `• Skill & combat requirements must be completed first\n`;
+  description += `• Skill & combat requirements must be met first\n`;
   description += `• Ironman accounts have additional upcharges\n`;
   description += `• Incomplete skills result in extra fees\n`;
   description += `• Contact support for custom pricing\n`;
 
   embed.setDescription(description.trim());
-
   embed.setFooter({
     text: `🐲 Dragon Services • Elite Quest Specialists • Requirements & Ironman upcharges apply`,
     iconURL: 'https://oldschool.runescape.wiki/images/thumb/4/4e/Dragon_full_helm.png/21px-Dragon_full_helm.png'
   });
-
   embed.setTimestamp();
 
   return embed;
@@ -541,15 +529,11 @@ function getServiceEmoji(serviceType: string): string {
 
 // Multi-quest calculator embed
 export function createMultiQuestCalculatorEmbed(questsData: any[]) {
-  // Format numbers exactly like the skill calculator
   const formatGP = (gp: number) => {
-    if (gp >= 1000000) {
-      return `${(gp / 1000000).toFixed(1)}M`;
-    } else if (gp >= 1000) {
-      return `${(gp / 1000).toFixed(1)}K`;
-    } else {
-      return `${Math.round(gp)}`;
-    }
+    if (gp >= 1000000000) return `${(gp / 1000000000).toFixed(2)}B`;
+    if (gp >= 1000000) return `${(gp / 1000000).toFixed(1)}M`;
+    if (gp >= 1000) return `${(gp / 1000).toFixed(1)}K`;
+    return `${Math.round(gp)}`;
   };
 
   const embed = new EmbedBuilder()
@@ -558,59 +542,41 @@ export function createMultiQuestCalculatorEmbed(questsData: any[]) {
     .setThumbnail('https://oldschool.runescape.wiki/images/thumb/4/4e/Dragon_full_helm.png/130px-Dragon_full_helm.png');
 
   let description = '';
-  let totalPrice = 0;
+  let grandTotal = 0;
 
-  // Process each quest (now only Standard pricing)
-  questsData.forEach((questData, questIndex) => {
-    const { quest, pricingOptions } = questData;
-    
+  questsData.forEach(questData => {
+    const { quest, priceItems } = questData;
     description += `**${quest.name}**\n`;
-    
-    // Should only have Standard pricing now
-    if (pricingOptions.length > 0) {
-      const pricing = pricingOptions[0]; // Standard pricing
-      const price = parseFloat(pricing.price);
-      const priceFormatted = formatGP(price);
-      
-      totalPrice += price;
-      description += `📋 Standard: **${priceFormatted} GP**\n`;
+
+    if (priceItems && priceItems.length > 0) {
+      for (const item of priceItems) {
+        const price = item.finalPrice || item.originalPrice || 0;
+        grandTotal += price;
+        if (item.discountPercentage > 0) {
+          description += `• ${item.name}: ~~${item.price}~~ → ${formatGP(item.finalPrice)} GP (${item.discountPercentage}% off)\n`;
+        } else {
+          description += `• ${item.name}: **${item.price}**\n`;
+        }
+      }
     }
-    
     description += '\n';
   });
 
-  // Add totals section
-  description += '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n';
-  description += '**💰 TOTAL PRICING:**\n\n';
-  
-  const totalFormatted = formatGP(totalPrice);
-  
-  description += `📋 **Standard Total**\n`;
-  description += `⚡ Complete all ${questsData.length} quests\n`;
-  description += `💰 ${totalFormatted} GP\n\n`;
+  if (grandTotal > 0) {
+    description += '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+    description += `**💰 Grand Total: ${formatGP(grandTotal)} GP**\n\n`;
+  }
 
-  // Add important pricing disclaimers for multi-quest
   description += `⚠️ **Important Notes:**\n`;
   description += `• All skill & combat requirements must be met\n`;
   description += `• Ironman accounts incur additional upcharges\n`;
   description += `• Missing skills will add extra fees per quest\n`;
-  description += `• Bulk discounts may apply for 5+ quests\n`;
-
-  // Add quest list for reference (shortened)
-  const questNames = questsData.map(q => q.quest.name).join(', ');
-  if (questNames.length > 80) {
-    description += `\n**Quests:** ${questNames.substring(0, 77)}...`;
-  } else {
-    description += `\n**Quests:** ${questNames}`;
-  }
 
   embed.setDescription(description.trim());
-
   embed.setFooter({
     text: `🐲 Dragon Services • Elite Multi-Quest Specialists • Requirements & Ironman upcharges apply`,
     iconURL: 'https://oldschool.runescape.wiki/images/thumb/4/4e/Dragon_full_helm.png/21px-Dragon_full_helm.png'
   });
-
   embed.setTimestamp();
 
   return embed;
