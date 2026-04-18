@@ -72,7 +72,7 @@ export const experienceTable = pgTable("experience_table", {
 export const quests = pgTable("quests", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(), // e.g., "Cooking Assistant", "Dragon Slayer"
-  category: text("category").notNull(), // novice, intermediate, experienced, master, grandmaster
+  category: text("category"), // optional, kept for backward compat
   description: text("description"),
   requirements: text("requirements"), // quest requirements
   icon: text("icon"), // quest icon or emoji
