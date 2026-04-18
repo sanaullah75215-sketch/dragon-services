@@ -224,9 +224,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validatedData = insertQuestSchema.parse(req.body);
       const quest = await storage.createQuest(validatedData);
       res.status(201).json(quest);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating quest:', error);
-      res.status(500).json({ message: 'Failed to create quest' });
+      res.status(500).json({ message: 'Failed to create quest', detail: error?.message || String(error) });
     }
   });
 
