@@ -5,15 +5,18 @@ echo "================================================"
 echo " Dragon Services Bot - Starting up"
 echo "================================================"
 
-# Check if schema already exists
+# Initial schema setup (first run only)
 echo "[1/3] Setting up database schema..."
 TABLE_EXISTS=$(psql "$DATABASE_URL" -t -c "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'gp_rates')" 2>/dev/null | tr -d ' \n')
 
 if [ "$TABLE_EXISTS" = "t" ]; then
-  echo "     Schema already exists - skipping"
+  echo "     Tables found - syncing schema changes..."
+  npx drizzle-kit push --force 2>&1 | tail -5 || true
+  echo "     Schema sync done!"
 else
-  echo "     Creating tables..."
+  echo "     First run - creating tables..."
   psql "$DATABASE_URL" -f /app/migrations/0000_init.sql 2>&1 | grep -v "^$" || true
+  npx drizzle-kit push --force 2>&1 | tail -5 || true
   echo "     Done!"
 fi
 
