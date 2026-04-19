@@ -8,6 +8,24 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
+// Dashboard password protection - only active when DASHBOARD_PASSWORD env var is set
+if (process.env.DASHBOARD_PASSWORD) {
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    // Skip: dink webhook (RuneLite needs public access), and API health checks
+    if (req.path === '/api/dink' || req.path === '/api/bot-status') return next();
+
+    const authHeader = req.headers.authorization || '';
+    if (authHeader.startsWith('Basic ')) {
+      const credentials = Buffer.from(authHeader.slice(6), 'base64').toString();
+      const password = credentials.split(':').slice(1).join(':'); // allow colons in password
+      if (password === process.env.DASHBOARD_PASSWORD) return next();
+    }
+
+    res.set('WWW-Authenticate', 'Basic realm="Dragon Services Dashboard"');
+    res.status(401).send('Access denied. Enter your dashboard password.');
+  });
+}
+
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
