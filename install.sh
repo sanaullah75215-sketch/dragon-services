@@ -45,10 +45,10 @@ else
 fi
 echo "✅ Code ready"
 
-# ─── STEP 4: Ask for the 3 required values ───────────────────────────────────
+# ─── STEP 4: Ask for required values ─────────────────────────────────────────
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  3 values needed to run your bot:"
+echo "  Configuration"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
@@ -69,7 +69,7 @@ if [ "$SKIP_CONFIG" = false ]; then
   echo ""
 
   echo "2) Database Password"
-  echo "   (Make up any password - only used internally)"
+  echo "   (Make up any strong password - only used internally)"
   echo ""
   read -p "   Enter a password: " DB_PASS < /dev/tty
   echo ""
@@ -85,17 +85,52 @@ if [ "$SKIP_CONFIG" = false ]; then
   fi
   echo ""
 
+  echo "4) Dashboard Password (RECOMMENDED)"
+  echo "   Protects the web admin panel from unauthorized access."
+  echo "   Leave blank to keep dashboard open (not recommended)."
+  echo ""
+  read -p "   Dashboard password (or ENTER to skip): " DASH_PASS < /dev/tty
+  echo ""
+
   cat > "$INSTALL_DIR/.env" <<EOF
 DISCORD_BOT_TOKEN=${BOT_TOKEN}
 DB_PASSWORD=${DB_PASS}
 SESSION_SECRET=${SESSION_SECRET}
 EOF
+
+  if [ -n "$DASH_PASS" ]; then
+    echo "DASHBOARD_PASSWORD=${DASH_PASS}" >> "$INSTALL_DIR/.env"
+    echo "✅ Dashboard password set"
+  else
+    echo "⚠️  Dashboard password skipped - anyone with your VPS IP can access the dashboard"
+  fi
+
   echo "✅ Config saved"
 fi
 
-# ─── STEP 5: Stop old containers, rebuild and start ──────────────────────────
+# ─── STEP 5: Firewall setup (UFW) ────────────────────────────────────────────
+echo ""
+echo "🔒 Checking firewall..."
+if command -v ufw &> /dev/null; then
+  # Allow SSH so we don't lock ourselves out
+  ufw allow 22/tcp > /dev/null 2>&1 || true
+  # Allow the dashboard port
+  ufw allow 5000/tcp > /dev/null 2>&1 || true
+  # Enable if not already active
+  if ! ufw status | grep -q "Status: active"; then
+    echo "y" | ufw enable > /dev/null 2>&1 || true
+    echo "✅ Firewall enabled (SSH + port 5000 allowed)"
+  else
+    echo "✅ Firewall already active"
+  fi
+else
+  echo "⚠️  UFW not found - skipping firewall setup"
+fi
+
+# ─── STEP 6: Stop old containers, rebuild and start ──────────────────────────
 echo ""
 echo "🛑 Stopping any old containers..."
+cd "$INSTALL_DIR"
 docker compose down --remove-orphans 2>/dev/null || true
 
 echo ""
@@ -103,7 +138,24 @@ echo "🔨 Building and starting (takes ~2 min the first time)..."
 echo ""
 docker compose up -d --build --remove-orphans
 
-# ─── STEP 6: Wait and confirm ────────────────────────────────────────────────
+# ─── STEP 7: Set up automatic daily database backups ─────────────────────────
+echo ""
+echo "💾 Setting up automatic daily backups..."
+BACKUP_SCRIPT="$INSTALL_DIR/backup.sh"
+chmod +x "$BACKUP_SCRIPT" 2>/dev/null || true
+
+CRON_LINE="0 3 * * * $BACKUP_SCRIPT >> /var/log/dragon-backup.log 2>&1"
+# Add cron job only if it doesn't already exist
+if ! crontab -l 2>/dev/null | grep -q "$BACKUP_SCRIPT"; then
+  (crontab -l 2>/dev/null; echo "$CRON_LINE") | crontab -
+  echo "✅ Daily backup scheduled at 3:00 AM (keeps last 7 days)"
+  echo "   Backup folder: $INSTALL_DIR/backups/"
+  echo "   Backup log:    /var/log/dragon-backup.log"
+else
+  echo "✅ Backup cron job already set up"
+fi
+
+# ─── STEP 8: Wait and confirm ────────────────────────────────────────────────
 echo ""
 echo "⏳ Starting up..."
 sleep 12
@@ -118,6 +170,7 @@ echo "  • View logs:    docker compose -f $INSTALL_DIR/docker-compose.yml logs
 echo "  • Stop bot:     docker compose -f $INSTALL_DIR/docker-compose.yml down"
 echo "  • Restart bot:  docker compose -f $INSTALL_DIR/docker-compose.yml restart app"
 echo "  • Update bot:   curl -fsSL https://raw.githubusercontent.com/sanaullah75215-sketch/dragon-services/main/install.sh | bash"
+echo "  • Manual backup: $INSTALL_DIR/backup.sh"
 echo ""
 echo "  Web dashboard:  http://$(hostname -I 2>/dev/null | awk '{print $1}' || echo 'your-vps-ip'):5000"
 echo ""
