@@ -10,13 +10,40 @@ echo "[1/3] Setting up database schema..."
 TABLE_EXISTS=$(psql "$DATABASE_URL" -t -c "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'gp_rates')" 2>/dev/null | tr -d ' \n')
 
 if [ "$TABLE_EXISTS" = "t" ]; then
-  echo "     Tables found - syncing schema changes..."
-  npx drizzle-kit push --force 2>&1 | tail -5 || true
-  echo "     Schema sync done!"
+  echo "     Tables found - applying safe schema patches..."
+
+  # Patch: make quests.category nullable (was NOT NULL in earlier versions)
+  psql "$DATABASE_URL" -c "
+    DO \$\$ BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'quests' AND column_name = 'category' AND is_nullable = 'NO'
+      ) THEN
+        ALTER TABLE quests ALTER COLUMN category DROP NOT NULL;
+        RAISE NOTICE 'Patched: quests.category is now nullable';
+      END IF;
+    END \$\$;
+  " 2>&1 | grep -v "^$" || true
+
+  # Patch: widen quest_pricing.price to numeric(20,2) to support billions of GP
+  psql "$DATABASE_URL" -c "
+    DO \$\$ BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'quest_pricing' AND column_name = 'price' AND numeric_precision = 10
+      ) THEN
+        ALTER TABLE quest_pricing ALTER COLUMN price TYPE numeric(20, 2);
+        RAISE NOTICE 'Patched: quest_pricing.price widened to numeric(20,2)';
+      END IF;
+    END \$\$;
+  " 2>&1 | grep -v "^$" || true
+
+  echo "     Schema patches done!"
 else
   echo "     First run - creating tables..."
   psql "$DATABASE_URL" -f /app/migrations/0000_init.sql 2>&1 | grep -v "^$" || true
-  npx drizzle-kit push --force 2>&1 | tail -5 || true
+  # Ensure quest_pricing.price starts wide enough
+  psql "$DATABASE_URL" -c "ALTER TABLE quest_pricing ALTER COLUMN price TYPE numeric(20, 2);" 2>/dev/null || true
   echo "     Done!"
 fi
 
