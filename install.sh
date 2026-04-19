@@ -45,23 +45,18 @@ else
 fi
 echo "✅ Code ready"
 
-# ─── STEP 4: Ask for required values ─────────────────────────────────────────
+# ─── STEP 4: Configuration ───────────────────────────────────────────────────
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  Configuration"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-SKIP_CONFIG=false
-if [ -f "$INSTALL_DIR/.env" ]; then
-  read -p "⚠️  Bot is already configured. Reconfigure? (y/N): " RECONFIG < /dev/tty
-  if [[ "$RECONFIG" != "y" && "$RECONFIG" != "Y" ]]; then
-    SKIP_CONFIG=true
-    echo "Keeping existing config - updating bot..."
-  fi
-fi
+if [ ! -f "$INSTALL_DIR/.env" ]; then
+  # ── Fresh install: ask for everything ──────────────────────────────────────
+  echo "Fresh install - need a few values to get started."
+  echo ""
 
-if [ "$SKIP_CONFIG" = false ]; then
   echo "1) Discord Bot Token"
   echo "   (From: discord.com/developers → Your App → Bot → Token)"
   echo ""
@@ -74,20 +69,11 @@ if [ "$SKIP_CONFIG" = false ]; then
   read -p "   Enter a password: " DB_PASS < /dev/tty
   echo ""
 
-  echo "3) Session Secret"
-  echo "   (Press ENTER to auto-generate)"
-  echo ""
   AUTO_SECRET=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "dragon-$(date +%s%N)")
-  read -p "   Secret (ENTER to auto-generate): " SESSION_SECRET < /dev/tty
-  if [ -z "$SESSION_SECRET" ]; then
-    SESSION_SECRET="$AUTO_SECRET"
-    echo "   Generated: $SESSION_SECRET"
-  fi
-  echo ""
 
-  echo "4) Dashboard Password (RECOMMENDED)"
+  echo "3) Dashboard Password (RECOMMENDED)"
   echo "   Protects the web admin panel from unauthorized access."
-  echo "   Leave blank to keep dashboard open (not recommended)."
+  echo "   Leave blank to skip (not recommended)."
   echo ""
   read -p "   Dashboard password (or ENTER to skip): " DASH_PASS < /dev/tty
   echo ""
@@ -95,17 +81,44 @@ if [ "$SKIP_CONFIG" = false ]; then
   cat > "$INSTALL_DIR/.env" <<EOF
 DISCORD_BOT_TOKEN=${BOT_TOKEN}
 DB_PASSWORD=${DB_PASS}
-SESSION_SECRET=${SESSION_SECRET}
+SESSION_SECRET=${AUTO_SECRET}
 EOF
 
   if [ -n "$DASH_PASS" ]; then
     echo "DASHBOARD_PASSWORD=${DASH_PASS}" >> "$INSTALL_DIR/.env"
     echo "✅ Dashboard password set"
-  else
-    echo "⚠️  Dashboard password skipped - anyone with your VPS IP can access the dashboard"
   fi
 
   echo "✅ Config saved"
+
+else
+  # ── Existing install: NEVER touch DB_PASSWORD (would break the database) ───
+  echo "✅ Existing config found - keeping all settings (data is safe)"
+  echo ""
+
+  # Offer to set/update dashboard password only
+  CURRENT_DASH=$(grep "^DASHBOARD_PASSWORD=" "$INSTALL_DIR/.env" | cut -d= -f2- || true)
+  if [ -n "$CURRENT_DASH" ]; then
+    echo "   Dashboard password is currently SET."
+    read -p "   Change dashboard password? (y/N): " CHANGE_DASH < /dev/tty
+    if [[ "$CHANGE_DASH" == "y" || "$CHANGE_DASH" == "Y" ]]; then
+      read -p "   New dashboard password: " DASH_PASS < /dev/tty
+      # Remove old line and add new one
+      sed -i '/^DASHBOARD_PASSWORD=/d' "$INSTALL_DIR/.env"
+      echo "DASHBOARD_PASSWORD=${DASH_PASS}" >> "$INSTALL_DIR/.env"
+      echo "✅ Dashboard password updated"
+    fi
+  else
+    echo "   Dashboard password is NOT set (dashboard is open to anyone)."
+    read -p "   Set a dashboard password now? (Y/n): " SET_DASH < /dev/tty
+    if [[ "$SET_DASH" != "n" && "$SET_DASH" != "N" ]]; then
+      read -p "   Dashboard password: " DASH_PASS < /dev/tty
+      if [ -n "$DASH_PASS" ]; then
+        echo "DASHBOARD_PASSWORD=${DASH_PASS}" >> "$INSTALL_DIR/.env"
+        echo "✅ Dashboard password set"
+      fi
+    fi
+  fi
 fi
 
 # ─── STEP 5: Firewall setup (UFW) ────────────────────────────────────────────
