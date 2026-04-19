@@ -32,7 +32,25 @@ if ! command -v git &> /dev/null; then
   apt-get install -y git 2>/dev/null || yum install -y git 2>/dev/null || true
 fi
 
-# ─── STEP 3: Clone or update the repo ────────────────────────────────────────
+# ─── STEP 3: Backup database before doing anything (existing installs only) ───
+if [ -d "$INSTALL_DIR/.git" ]; then
+  echo ""
+  echo "💾 Backing up database before update..."
+  DB_CONTAINER=$(docker ps --filter "name=dragon-services-db" --format "{{.Names}}" | head -1)
+  if [ -n "$DB_CONTAINER" ]; then
+    mkdir -p "$INSTALL_DIR/backups"
+    TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+    BACKUP_FILE="$INSTALL_DIR/backups/dragon_services_$TIMESTAMP.sql.gz"
+    docker exec "$DB_CONTAINER" pg_dump -U dragonbot dragon_services | gzip > "$BACKUP_FILE"
+    SIZE=$(du -sh "$BACKUP_FILE" | cut -f1)
+    echo "✅ Backup saved: $BACKUP_FILE ($SIZE)"
+    echo "   (Restore with: gunzip -c $BACKUP_FILE | docker exec -i $DB_CONTAINER psql -U dragonbot dragon_services)"
+  else
+    echo "⚠️  Bot not running - skipping backup (no data to lose on first install)"
+  fi
+fi
+
+# ─── STEP 4: Clone or update the repo ────────────────────────────────────────
 echo ""
 if [ -d "$INSTALL_DIR/.git" ]; then
   echo "📂 Updating existing installation in $INSTALL_DIR..."
