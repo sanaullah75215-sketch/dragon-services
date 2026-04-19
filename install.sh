@@ -96,12 +96,12 @@ fi
 # ─── STEP 5: Stop old containers, rebuild and start ──────────────────────────
 echo ""
 echo "🛑 Stopping any old containers..."
-docker compose down 2>/dev/null || true
+docker compose down --remove-orphans 2>/dev/null || true
 
 echo ""
 echo "🔨 Building and starting (takes ~2 min the first time)..."
 echo ""
-docker compose up -d --build
+docker compose up -d --build --remove-orphans
 
 # ─── STEP 6: Wait and confirm ────────────────────────────────────────────────
 echo ""
