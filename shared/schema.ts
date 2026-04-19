@@ -85,7 +85,7 @@ export const questPricing = pgTable("quest_pricing", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   questId: varchar("quest_id").notNull().references(() => quests.id, { onDelete: "cascade" }),
   serviceType: text("service_type").notNull(), // e.g., "Standard", "Express", "VIP"
-  price: decimal("price", { precision: 10, scale: 2 }).notNull(), // price in GP
+  price: decimal("price", { precision: 20, scale: 2 }).notNull(), // price in GP (supports up to 999 trillion)
   duration: text("duration"), // estimated completion time
   description: text("description"), // service description
   isActive: boolean("is_active").default(true),
