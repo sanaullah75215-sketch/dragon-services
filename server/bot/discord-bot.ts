@@ -4099,67 +4099,76 @@ async function handleCheckWalletCommand(message: any) {
     
     // Check if user is worker or customer
     const isWorker = wallet.userType === 'worker';
-    const rankInfo = getCustomerRank(wallet.totalSpentGp || 0, wallet.manualRank);
-    const discountPercent = getCustomerDiscount(wallet.totalSpentGp || 0, wallet.manualRank);
-    
-    // Create detailed staff check embed
-    const embed = {
-      color: isWorker ? 0xFF6B35 : 0x00D4AA,
-      title: `🔍 STAFF WALLET CHECK - ${isWorker ? '⚒️ WORKER' : '👑 CUSTOMER'}`,
-      description: `📋 **Account Details for:** ${targetUsername}\n🆔 **Discord ID:** ${targetUserId}\n👤 **Account Type:** ${isWorker ? '⚒️ Elite Worker' : '👑 Premium Customer'}`,
-      fields: [
-        {
-          name: '💰 Current Balance',
-          value: `🪙 **${formatGPAmount(wallet.balanceGp)} GP**\n💸 *${isWorker ? 'Available for withdrawal' : 'Available for orders'}*`,
-          inline: true
-        },
-        {
-          name: isWorker ? '🎯 Worker Statistics' : '🏆 Customer Rank',
-          value: isWorker 
-            ? `💼 **${wallet.completedJobs || 0}** Jobs Completed\n📈 **${formatGPAmount(wallet.totalEarningsGp || 0)} GP** Total Earned\n🏆 **Elite Worker Status**`
-            : rankInfo 
-              ? `${rankInfo.emoji} **${rankInfo.name}**\n💸 **${discountPercent}% VIP Discount**\n🎭 **Discord Role Auto-Assigned**${wallet.manualRank ? '\n🔧 *Admin Override: ' + wallet.manualRank + '*' : ''}`
-              : '🌟 **New Customer**\n💸 **0% discount**\n🎯 *Spend 100M+ GP to unlock VIP rank & role*',
-          inline: true
-        },
-        {
-          name: '📊 Account Activity',
-          value: `📦 **${wallet.totalOrders || 0}** Total Orders\n💰 **${formatGPAmount(wallet.totalSpentGp || 0)} GP** Lifetime Spent\n🏦 **${formatGPAmount(wallet.totalDepositedGp || 0)} GP** Total Deposited`,
-          inline: true
-        }
-      ],
-      footer: {
-        text: `🐲 Dragon Services • Staff Check • Requested by ${message.author.username}`,
-        icon_url: 'https://oldschool.runescape.wiki/images/thumb/4/4e/Dragon_full_helm.png/21px-Dragon_full_helm.png'
-      },
-      timestamp: new Date().toISOString(),
-      thumbnail: {
-        url: 'https://oldschool.runescape.wiki/images/thumb/4/4e/Dragon_full_helm.png/130px-Dragon_full_helm.png'
-      }
-    };
-    
-    // Add worker-specific deposit info if applicable
+
+    let embed;
+
     if (isWorker) {
-      const availableDeposit = wallet.depositGp || 0;
+      const totalDeposited = wallet.totalDepositedGp || 0;
       const lockedDeposit = wallet.workingDepositGp || 0;
-      embed.fields.push({
-        name: '🏦 Security Deposits',
-        value: `✅ **Available:** ${formatGPAmount(availableDeposit)} GP\n⏳ **Currently Locked:** ${formatGPAmount(lockedDeposit)} GP\n🔒 **Total Historical:** ${formatGPAmount(wallet.totalDepositedGp || 0)} GP`,
-        inline: false
-      });
+      const availableSecurity = totalDeposited - lockedDeposit;
+
+      embed = {
+        color: 0xFF6B35,
+        title: '🐲⚒️ Worker Wallet',
+        description: `**${targetUsername}**\n⚡ Worker`,
+        fields: [
+          {
+            name: '💰 Balance',
+            value: `**${formatGPAmount(wallet.balanceGp)} GP**`,
+            inline: false
+          },
+          {
+            name: '📊 Stats',
+            value: `Jobs: **${wallet.completedJobs || 0}**\nEarned: **${formatGPAmount(wallet.totalEarningsGp || 0)} GP**`,
+            inline: false
+          },
+          {
+            name: '🏦 Deposits',
+            value: `Total: **${formatGPAmount(totalDeposited)} GP**\nLocked: **${formatGPAmount(lockedDeposit)} GP**\nAvailable: **${formatGPAmount(availableSecurity)} GP**`,
+            inline: false
+          }
+        ],
+        footer: {
+          text: `🐲 Staff Check • Requested by ${message.author.username}`,
+          icon_url: 'https://oldschool.runescape.wiki/images/thumb/4/4e/Dragon_full_helm.png/21px-Dragon_full_helm.png'
+        },
+        timestamp: new Date().toISOString()
+      };
+    } else {
+      const rankInfo = getCustomerRank(wallet.totalSpentGp || 0, wallet.manualRank);
+      const discountPercent = getCustomerDiscount(wallet.totalSpentGp || 0, wallet.manualRank);
+
+      embed = {
+        color: 0xFF6B35,
+        title: '🐲👑 Customer Wallet',
+        description: `**${targetUsername}**\n✨ Premium Customer | Dragon Services`,
+        fields: [
+          {
+            name: '💰 Balance',
+            value: `**${formatGPAmount(wallet.balanceGp)} GP**`,
+            inline: false
+          },
+          {
+            name: '🏆 VIP Status',
+            value: rankInfo
+              ? `${rankInfo.emoji} **${rankInfo.name}**\n💸 ${discountPercent}% Discount${wallet.manualRank ? ' (Override)' : ''}`
+              : `🌟 New Customer\n🎯 Spend 100M+ GP for VIP rank`,
+            inline: false
+          },
+          {
+            name: '📊 Stats',
+            value: `Orders: **${wallet.totalOrders || 0}**\nSpent: **${formatGPAmount(wallet.totalSpentGp || 0)} GP**\nDeposited: **${formatGPAmount(wallet.totalDepositedGp || 0)} GP**`,
+            inline: false
+          }
+        ],
+        footer: {
+          text: `🐲 Staff Check • Requested by ${message.author.username}`,
+          icon_url: 'https://oldschool.runescape.wiki/images/thumb/4/4e/Dragon_full_helm.png/21px-Dragon_full_helm.png'
+        },
+        timestamp: new Date().toISOString()
+      };
     }
-    
-    // Add scam risk warning based on balance
-    const riskLevel = wallet.balanceGp < 5000000 ? '⚠️ LOW BALANCE' : wallet.balanceGp >= 50000000 ? '✅ SAFE' : '🟡 MODERATE';
-    embed.fields.push({
-      name: '🛡️ Staff Notes',
-      value: `⚠️ **Risk Assessment:** ${riskLevel}\n` +
-             `📌 **Balance:** ${formatGPAmount(wallet.balanceGp)} GP ${wallet.balanceGp < 5000000 ? '(Below 5M - verify before large orders)' : ''}\n` +
-             `🔍 **Account Status:** ${wallet.isActive ? '✅ Active' : '❌ Inactive'}\n` +
-             `📅 **Last Activity:** Check order history for recent transactions`,
-      inline: false
-    });
-    
+
     await message.reply({ embeds: [embed] });
     
     // Log the staff check
