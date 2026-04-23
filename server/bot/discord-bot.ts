@@ -280,7 +280,7 @@ export async function startDiscordBot() {
         await handleEditDepositCommand(message);
       } else if (message.content.startsWith('!editlockdeposit')) {
         await handleEditLockDepositCommand(message);
-      } else if (message.content.startsWith('!vouch ')) {
+      } else if (message.content.startsWith('!vouch ') || message.content.startsWith('.vouch ')) {
         await handleVouchCommand(message);
       } else if (message.content.startsWith('!vouches')) {
         await handleVouchesCommand(message);
@@ -6428,7 +6428,7 @@ async function handleVouchCommand(message: any) {
     const vouchContent = message.content.slice('!vouch '.length).trim();
 
     if (!vouchContent || vouchContent.length < 5) {
-      await message.reply('❌ **Usage:** `!vouch <your message>`\n\n**Example:** `!vouch Great service, fast fire cape! Highly recommend Dragon Services.`');
+      await message.reply('❌ **Usage:** `.vouch <your message>`\n\n**Example:** `.vouch Great service, fast fire cape! Highly recommend Dragon Services.`');
       return;
     }
 
