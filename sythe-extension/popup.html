@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      width: 320px;
+      font-family: 'Segoe UI', sans-serif;
+      background: #1a1a2e;
+      color: #e0e0e0;
+    }
+
+    .header {
+      background: #FF6B35;
+      padding: 16px;
+      text-align: center;
+    }
+
+    .header h1 {
+      font-size: 15px;
+      font-weight: 700;
+      color: white;
+    }
+
+    .header p {
+      font-size: 11px;
+      color: rgba(255,255,255,0.85);
+      margin-top: 2px;
+    }
+
+    .body {
+      padding: 16px;
+    }
+
+    label {
+      display: block;
+      font-size: 11px;
+      color: #aaa;
+      margin-bottom: 5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    input {
+      width: 100%;
+      padding: 9px 12px;
+      background: #0f0f1a;
+      border: 1px solid #333;
+      border-radius: 6px;
+      color: #e0e0e0;
+      font-size: 12px;
+      outline: none;
+    }
+
+    input:focus {
+      border-color: #FF6B35;
+    }
+
+    .help {
+      font-size: 11px;
+      color: #777;
+      margin-top: 5px;
+      line-height: 1.5;
+    }
+
+    .help a {
+      color: #FF6B35;
+      text-decoration: none;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 10px;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 10px;
+      transition: opacity 0.2s;
+    }
+
+    .btn:hover { opacity: 0.85; }
+
+    .btn-primary {
+      background: #FF6B35;
+      color: white;
+    }
+
+    .btn-save {
+      background: #5865F2;
+      color: white;
+    }
+
+    .btn-reset {
+      background: #2a2a3e;
+      color: #aaa;
+      font-size: 11px;
+      margin-top: 6px;
+    }
+
+    .status {
+      margin-top: 12px;
+      padding: 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      text-align: center;
+      display: none;
+    }
+
+    .status.success { background: #1a3a2e; color: #57F287; display: block; }
+    .status.error   { background: #3a1a1a; color: #ED4245; display: block; }
+    .status.info    { background: #1a2a3e; color: #5865F2; display: block; }
+
+    .divider {
+      border: none;
+      border-top: 1px solid #2a2a3e;
+      margin: 14px 0;
+    }
+
+    .not-on-thread {
+      text-align: center;
+      padding: 20px;
+      color: #777;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .not-on-thread a {
+      color: #FF6B35;
+      text-decoration: none;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🐲 Dragon Services</h1>
+    <p>Sythe Vouch Auto-Poster</p>
+  </div>
+
+  <div class="body">
+    <div id="setupSection">
+      <label>Discord Webhook URL</label>
+      <input type="text" id="webhookUrl" placeholder="https://discord.com/api/webhooks/..." />
+      <p class="help">
+        In Discord: go to your Sythe vouch channel → Edit Channel → Integrations → Webhooks → New Webhook → Copy URL
+      </p>
+      <button class="btn btn-save" id="saveBtn">💾 Save Webhook</button>
+    </div>
+
+    <hr class="divider">
+
+    <div id="onThreadSection" style="display:none">
+      <button class="btn btn-primary" id="checkBtn">🔍 Check & Post New Vouches</button>
+      <button class="btn btn-reset" id="resetBtn">🔄 Reset — re-post all vouches</button>
+    </div>
+
+    <div id="notOnThreadSection" class="not-on-thread" style="display:none">
+      <p>You need to be on the Sythe vouch thread to use this.<br><br>
+      <a href="https://www.sythe.org/threads/4326552/" target="_blank">👉 Open Sythe Vouch Thread</a></p>
+    </div>
+
+    <div id="status" class="status"></div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
