@@ -280,10 +280,10 @@ export async function startDiscordBot() {
         await handleEditDepositCommand(message);
       } else if (message.content.startsWith('!editlockdeposit')) {
         await handleEditLockDepositCommand(message);
-      } else if (message.content.startsWith('!vouch ') || message.content.startsWith('.vouch ')) {
-        await handleVouchCommand(message);
       } else if (message.content.startsWith('!vouches')) {
         await handleVouchesCommand(message);
+      } else if (message.content.startsWith('!vouch') || message.content.startsWith('.vouch')) {
+        await handleVouchCommand(message);
       } else if (message.content.startsWith('!leavevouch ')) {
         await handleLeaveVouchCommand(message);
       } else if (message.content.startsWith('!worker ')) {
@@ -6425,112 +6425,42 @@ async function handleVouchCommand(message: any) {
   try {
     storage.updateCommandUsage('vouch').catch(() => {});
 
-    const vouchContent = message.content.slice('!vouch '.length).trim();
-
-    if (!vouchContent || vouchContent.length < 5) {
-      await message.reply('❌ **Usage:** `.vouch <your message>`\n\n**Example:** `.vouch Great service, fast fire cape! Highly recommend Dragon Services.`');
-      return;
-    }
-
-    if (vouchContent.length > 500) {
-      await message.reply('❌ Vouch message cannot be longer than 500 characters.');
-      return;
-    }
-
-    const username = message.author.username;
-    const userId = message.author.id;
-
-    // Build the vouch embed
-    const vouchEmbed = new EmbedBuilder()
+    const thankYouEmbed = new EmbedBuilder()
       .setColor(0xFF6B35)
-      .setTitle('⭐ New Vouch - Dragon Services')
-      .setDescription(`💬 *"${vouchContent}"*`)
+      .setTitle('🐲 Thank You for Trading with Dragon Services!')
+      .setDescription(
+        'We are truly grateful for your trust and support.\n\n' +
+        'If you had a great experience, we would love it if you could take a moment to leave us a vouch — ' +
+        'your feedback encourages us and helps us maintain a safe, reliable service for the whole community. 🙏\n\n' +
+        '**Please leave your vouch in one or both places below:**'
+      )
       .addFields(
         {
-          name: '👤 From',
-          value: `**${username}** (<@${userId}>)`,
-          inline: true
+          name: '📜 Sythe Forum',
+          value: '[⬅️ Click here to leave a vouch on our Sythe thread](https://www.sythe.org/threads/4326552/osrs-services-vouchers/)',
+          inline: false
         },
         {
-          name: '🎯 Service',
-          value: '**Dragon Services** • OSRS',
-          inline: true
-        },
-        {
-          name: '🔗 Also vouch on Sythe',
-          value: '[Click here to leave a vouch on our Sythe thread](https://www.sythe.org/threads/4326552/osrs-services-vouchers/)',
+          name: '💬 Discord Vouch Channel',
+          value: `Head over to <#${VOUCH_CHANNEL_ID}> and drop your vouch there!`,
           inline: false
         }
       )
       .setThumbnail('https://oldschool.runescape.wiki/images/thumb/4/4e/Dragon_full_helm.png/130px-Dragon_full_helm.png')
       .setFooter({
-        text: '🐲 Dragon Services • Thank you for your feedback!',
+        text: '🐲 Dragon Services • Every vouch means the world to us!',
         iconURL: 'https://oldschool.runescape.wiki/images/thumb/4/4e/Dragon_full_helm.png/21px-Dragon_full_helm.png'
       })
       .setTimestamp();
 
-    // Post to services-vouch channel
-    try {
-      let vouchChannel = client.channels.cache.get(VOUCH_CHANNEL_ID) as TextChannel | null;
-      if (!vouchChannel) {
-        vouchChannel = await client.channels.fetch(VOUCH_CHANNEL_ID) as TextChannel | null;
-      }
-      if (vouchChannel && vouchChannel.isTextBased()) {
-        await (vouchChannel as any).send({ embeds: [vouchEmbed] });
-      }
-    } catch (err) {
-      console.error('Error posting vouch to services-vouch channel:', err);
-    }
+    await message.channel.send({ embeds: [thankYouEmbed] });
 
-    // Post to Sythe vouch channel
-    try {
-      let sytheChannel = client.channels.cache.get(SYTHE_VOUCH_CHANNEL_ID) as TextChannel | null;
-      if (!sytheChannel) {
-        sytheChannel = await client.channels.fetch(SYTHE_VOUCH_CHANNEL_ID) as TextChannel | null;
-      }
-      if (sytheChannel && sytheChannel.isTextBased()) {
-        await (sytheChannel as any).send({ embeds: [vouchEmbed] });
-      }
-    } catch (err) {
-      console.error('Error posting vouch to Sythe vouch channel:', err);
-    }
-
-    // Save to database
-    try {
-      await storage.createVouch({
-        voucherUserId: userId,
-        voucherUsername: username,
-        vouchedUserId: 'dragon-services',
-        vouchedUsername: 'Dragon Services',
-        vouchType: 'quality',
-        isPositive: true,
-        reason: vouchContent,
-        serviceContext: undefined,
-        orderId: undefined,
-        isVerified: true,
-        isActive: true,
-        moderationNotes: undefined,
-        moderatedBy: undefined,
-        moderatedAt: undefined,
-      });
-    } catch (err) {
-      console.error('Error saving vouch to database:', err);
-    }
-
-    // Confirm to the user
-    await message.reply({
-      embeds: [
-        new EmbedBuilder()
-          .setColor(0x57F287)
-          .setTitle('✅ Vouch Posted!')
-          .setDescription(`Your vouch has been posted to <#${VOUCH_CHANNEL_ID}> and <#${SYTHE_VOUCH_CHANNEL_ID}>.\n\nThank you for your feedback, **${username}**! 🐲`)
-          .setTimestamp()
-      ]
-    });
+    // Delete the command message to keep the channel clean
+    try { await message.delete(); } catch (_) {}
 
   } catch (error) {
-    console.error('❌ Error handling !vouch command:', error);
-    await message.reply('❌ An error occurred while posting your vouch. Please try again.');
+    console.error('❌ Error handling .vouch command:', error);
+    await message.reply('❌ An error occurred. Please try again.');
   }
 }
 
