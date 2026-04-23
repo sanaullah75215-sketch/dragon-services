@@ -6422,104 +6422,115 @@ async function processOrderPayment(orderId: string, wallet: any, amount: number)
 
 // Vouching command handlers
 async function handleVouchCommand(message: any) {
-  const args = message.content.split(' ').slice(1);
-  if (args.length < 2) {
-    await message.reply('❌ **Usage:** `!vouch @username <type> <reason>`\n\n**Types:** `quality`, `trustworthy`, `reliable`, `communication`, `speed`\n**Example:** `!vouch @JohnDoe trustworthy Completed my fire cape service perfectly and on time!`');
-    return;
-  }
+  try {
+    storage.updateCommandUsage('vouch').catch(() => {});
 
-  // Parse the mentioned user
-  const mentionMatch = args[0].match(/^<@!?(\d+)>$/) || args[0].match(/^@?(.+)$/);
-  if (!mentionMatch) {
-    await message.reply('❌ **Error:** Please mention a valid user (e.g., @username or <@userid>).');
-    return;
-  }
+    const vouchContent = message.content.slice('!vouch '.length).trim();
 
-  let vouchedUserId = mentionMatch[1];
-  let vouchedUsername = args[0];
-  
-  // If it's a Discord mention, get the user info
-  if (args[0].startsWith('<@')) {
-    try {
-      const vouchedUser = await client.users.fetch(vouchedUserId);
-      vouchedUsername = vouchedUser.username;
-    } catch (error) {
-      await message.reply('❌ **Error:** Could not find that user.');
+    if (!vouchContent || vouchContent.length < 5) {
+      await message.reply('❌ **Usage:** `!vouch <your message>`\n\n**Example:** `!vouch Great service, fast fire cape! Highly recommend Dragon Services.`');
       return;
     }
-  } else {
-    // Clean username (remove @)
-    vouchedUsername = args[0].replace('@', '');
-    vouchedUserId = vouchedUsername; // For non-Discord users
-  }
 
-  // Prevent self-vouching
-  if (vouchedUserId === message.author.id || vouchedUsername === message.author.username) {
-    await message.reply('❌ **Error:** You cannot vouch for yourself!');
-    return;
-  }
+    if (vouchContent.length > 500) {
+      await message.reply('❌ Vouch message cannot be longer than 500 characters.');
+      return;
+    }
 
-  // Parse vouch type and reason
-  const vouchType = args[1].toLowerCase();
-  const validTypes = ['quality', 'trustworthy', 'reliable', 'communication', 'speed'];
-  
-  if (!validTypes.includes(vouchType)) {
-    await message.reply(`❌ **Error:** Invalid vouch type. Valid types: \`${validTypes.join('`, `')}\``);
-    return;
-  }
+    const username = message.author.username;
+    const userId = message.author.id;
 
-  const reason = args.slice(2).join(' ');
-  if (reason.length < 10) {
-    await message.reply('❌ **Error:** Vouch reason must be at least 10 characters long.');
-    return;
-  }
-
-  if (reason.length > 500) {
-    await message.reply('❌ **Error:** Vouch reason cannot be longer than 500 characters.');
-    return;
-  }
-
-  try {
-    // Create the vouch
-    const vouch = await storage.createVouch({
-      voucherUserId: message.author.id,
-      voucherUsername: message.author.username,
-      vouchedUserId,
-      vouchedUsername,
-      vouchType,
-      isPositive: true,
-      reason,
-      serviceContext: undefined,
-      orderId: undefined,
-      isVerified: false,
-      isActive: true,
-      moderationNotes: undefined,
-      moderatedBy: undefined,
-      moderatedAt: undefined,
-    });
-
-    // Send success message with Dragon Services styling
-    const successEmbed = new EmbedBuilder()
-      .setColor('#FF6B35')
-      .setTitle('🐲 Vouch Created Successfully!')
-      .setDescription(
-        `**${message.author.username}** vouched for **${vouchedUsername}**\n\n` +
-        `**Type:** ${vouchType.charAt(0).toUpperCase() + vouchType.slice(1)}\n` +
-        `**Reason:** ${reason}\n\n` +
-        `Use \`!vouches @${vouchedUsername}\` to view their vouches.`
+    // Build the vouch embed
+    const vouchEmbed = new EmbedBuilder()
+      .setColor(0xFF6B35)
+      .setTitle('⭐ New Vouch - Dragon Services')
+      .setDescription(`💬 *"${vouchContent}"*`)
+      .addFields(
+        {
+          name: '👤 From',
+          value: `**${username}** (<@${userId}>)`,
+          inline: true
+        },
+        {
+          name: '🎯 Service',
+          value: '**Dragon Services** • OSRS',
+          inline: true
+        },
+        {
+          name: '🔗 Also vouch on Sythe',
+          value: '[Click here to leave a vouch on our Sythe thread](https://www.sythe.org/threads/4326552/osrs-services-vouchers/)',
+          inline: false
+        }
       )
-      .setThumbnail('https://i.imgur.com/dragon-helmet.png') // Dragon Services branding
-      .setFooter({ text: 'Dragon Services • Trusted OSRS Services', iconURL: 'https://i.imgur.com/dragon-small.png' })
+      .setThumbnail('https://oldschool.runescape.wiki/images/thumb/4/4e/Dragon_full_helm.png/130px-Dragon_full_helm.png')
+      .setFooter({
+        text: '🐲 Dragon Services • Thank you for your feedback!',
+        iconURL: 'https://oldschool.runescape.wiki/images/thumb/4/4e/Dragon_full_helm.png/21px-Dragon_full_helm.png'
+      })
       .setTimestamp();
 
-    await message.reply({ embeds: [successEmbed] });
+    // Post to services-vouch channel
+    try {
+      let vouchChannel = client.channels.cache.get(VOUCH_CHANNEL_ID) as TextChannel | null;
+      if (!vouchChannel) {
+        vouchChannel = await client.channels.fetch(VOUCH_CHANNEL_ID) as TextChannel | null;
+      }
+      if (vouchChannel && vouchChannel.isTextBased()) {
+        await (vouchChannel as any).send({ embeds: [vouchEmbed] });
+      }
+    } catch (err) {
+      console.error('Error posting vouch to services-vouch channel:', err);
+    }
 
-    // Update command usage
-    storage.updateCommandUsage('vouch').catch(() => {});
-    
+    // Post to Sythe vouch channel
+    try {
+      let sytheChannel = client.channels.cache.get(SYTHE_VOUCH_CHANNEL_ID) as TextChannel | null;
+      if (!sytheChannel) {
+        sytheChannel = await client.channels.fetch(SYTHE_VOUCH_CHANNEL_ID) as TextChannel | null;
+      }
+      if (sytheChannel && sytheChannel.isTextBased()) {
+        await (sytheChannel as any).send({ embeds: [vouchEmbed] });
+      }
+    } catch (err) {
+      console.error('Error posting vouch to Sythe vouch channel:', err);
+    }
+
+    // Save to database
+    try {
+      await storage.createVouch({
+        voucherUserId: userId,
+        voucherUsername: username,
+        vouchedUserId: 'dragon-services',
+        vouchedUsername: 'Dragon Services',
+        vouchType: 'quality',
+        isPositive: true,
+        reason: vouchContent,
+        serviceContext: undefined,
+        orderId: undefined,
+        isVerified: true,
+        isActive: true,
+        moderationNotes: undefined,
+        moderatedBy: undefined,
+        moderatedAt: undefined,
+      });
+    } catch (err) {
+      console.error('Error saving vouch to database:', err);
+    }
+
+    // Confirm to the user
+    await message.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0x57F287)
+          .setTitle('✅ Vouch Posted!')
+          .setDescription(`Your vouch has been posted to <#${VOUCH_CHANNEL_ID}> and <#${SYTHE_VOUCH_CHANNEL_ID}>.\n\nThank you for your feedback, **${username}**! 🐲`)
+          .setTimestamp()
+      ]
+    });
+
   } catch (error) {
-    console.error('❌ Error creating vouch:', error);
-    await message.reply('❌ **Error:** Failed to create vouch. Please try again later.');
+    console.error('❌ Error handling !vouch command:', error);
+    await message.reply('❌ An error occurred while posting your vouch. Please try again.');
   }
 }
 
