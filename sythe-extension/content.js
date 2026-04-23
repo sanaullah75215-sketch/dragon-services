@@ -224,3 +224,45 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 // Auto-run on page load
 run();
+
+// ── Auto-refresh every 5 minutes ─────────────────────────────────────────────
+const REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+let secondsLeft = REFRESH_INTERVAL_MS / 1000;
+
+// Create countdown badge fixed to bottom-right corner
+const badge = document.createElement('div');
+badge.style.cssText = `
+  position: fixed; bottom: 20px; right: 20px; z-index: 99999;
+  background: #1a1a2e; color: #FF6B35; padding: 8px 14px;
+  border-radius: 8px; font-size: 12px; font-weight: bold;
+  border: 1px solid #FF6B35; box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  font-family: monospace; cursor: default; user-select: none;
+`;
+
+function formatTime(s) {
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `🐲 Next check: ${m}:${String(sec).padStart(2, '0')}`;
+}
+
+badge.textContent = formatTime(secondsLeft);
+document.body.appendChild(badge);
+
+// Countdown tick every second
+const countdownTimer = setInterval(() => {
+  secondsLeft--;
+  if (secondsLeft <= 0) {
+    badge.textContent = '🐲 Refreshing...';
+    clearInterval(countdownTimer);
+    location.reload();
+  } else {
+    badge.textContent = formatTime(secondsLeft);
+  }
+}, 1000);
+
+// Listen for messages from popup to reset timer
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.action === 'check_vouches') {
+    secondsLeft = REFRESH_INTERVAL_MS / 1000;
+  }
+});
