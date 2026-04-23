@@ -7,7 +7,7 @@ import BotStatus from "@/components/bot-status";
 import ServiceCard from "@/components/service-card";
 import LoadingWithTimeout from "@/components/loading-with-timeout";
 import { Service } from "@shared/schema";
-import { Settings, ExternalLink, Bot, Gift, Wallet, Package, ShoppingCart, AlertCircle, DollarSign, Menu } from "lucide-react";
+import { Settings, ExternalLink, Bot, Gift, Wallet, Package, ShoppingCart, AlertCircle, DollarSign, Menu, Download } from "lucide-react";
 import { useState } from "react";
 import {
   Sheet,
@@ -216,6 +216,31 @@ export default function Home() {
                 </div>
               </div>
             </div>
+          </div>
+        </Card>
+      </div>
+
+      {/* Downloads Section */}
+      <div className="max-w-4xl mx-auto px-4 pb-6">
+        <Card className="p-4 sm:p-6 border-primary/30 bg-primary/5">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center flex-shrink-0">
+                <Download className="h-5 w-5 text-primary-foreground" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-foreground">Sythe Vouch Chrome Extension</h3>
+                <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
+                  Automatically posts new vouches from your Sythe thread to Discord. Open the Sythe thread in Chrome while logged in, click the extension, and it handles the rest.
+                </p>
+              </div>
+            </div>
+            <a href="/sythe-extension.zip" download="sythe-extension.zip" className="shrink-0">
+              <Button className="w-full sm:w-auto gap-2">
+                <Download className="h-4 w-4" />
+                Download Extension
+              </Button>
+            </a>
           </div>
         </Card>
       </div>
