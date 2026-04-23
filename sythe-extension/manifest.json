@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "Dragon Services - Sythe Vouch Poster",
+  "version": "1.0",
+  "description": "Reads new vouches from the Sythe thread and posts them to your Discord vouch channel.",
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://www.sythe.org/*",
+    "https://discord.com/*",
+    "https://discordapp.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://www.sythe.org/threads/4326552/*", "https://www.sythe.org/threads/osrs-services-vouchers*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Dragon Services Vouch Poster"
+  },
+  "icons": {
+    "16": "icon.png",
+    "48": "icon.png",
+    "128": "icon.png"
+  }
+}
