@@ -23,8 +23,10 @@ chrome.storage.local.get(['webhookUrl'], result => {
 });
 
 // Check if current tab is the Sythe thread
+let currentTabId = null;
 chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
   const tab = tabs[0];
+  currentTabId = tab?.id;
   const url = tab?.url || '';
   const isOnThread =
     url.includes('sythe.org/threads/4326552') ||
@@ -60,30 +62,42 @@ checkBtn.addEventListener('click', () => {
     return;
   }
 
+  // Save webhook in case user typed without clicking save
+  chrome.storage.local.set({ webhookUrl });
+
   checkBtn.disabled = true;
   checkBtn.textContent = '⏳ Checking...';
   showStatus('Scanning the page for new vouches...', 'info');
 
-  chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
-    chrome.tabs.sendMessage(tabs[0].id, { action: 'check_vouches' }, response => {
-      checkBtn.disabled = false;
-      checkBtn.textContent = '🔍 Check & Post New Vouches';
-      if (chrome.runtime.lastError) {
-        showStatus('❌ Could not connect to the page. Try refreshing the Sythe thread.', 'error');
-      } else {
-        showStatus('✅ Done! Check your Discord vouch channel.', 'success');
-      }
-    });
+  chrome.tabs.sendMessage(currentTabId, { action: 'check_vouches' }, response => {
+    checkBtn.disabled = false;
+    checkBtn.textContent = '🔍 Check & Post New Vouches';
+
+    if (chrome.runtime.lastError) {
+      showStatus('❌ Could not connect to page. Refresh the Sythe thread and try again.', 'error');
+      return;
+    }
+
+    if (!response) {
+      showStatus('❌ No response from page. Try refreshing.', 'error');
+      return;
+    }
+
+    if (response.error === 'no_webhook') {
+      showStatus('❌ Webhook not set properly. Save it again.', 'error');
+    } else if (response.error === 'no_posts') {
+      showStatus('⚠️ Could not read posts. Open the console (F12) and look for [Dragon Services] logs.', 'error');
+    } else {
+      showStatus(`✅ Done! ${response.sent} new vouch(es) sent out of ${response.total} total on page.`, 'success');
+    }
   });
 });
 
-// Reset sent IDs so all vouches get re-posted
+// Reset sent IDs
 resetBtn.addEventListener('click', () => {
   if (!confirm('This will re-post ALL vouches from the page to Discord. Are you sure?')) return;
 
-  chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
-    chrome.tabs.sendMessage(tabs[0].id, { action: 'reset_sent' }, () => {
-      showStatus('🔄 Reset done. Click "Check & Post" to re-post all vouches.', 'info');
-    });
+  chrome.tabs.sendMessage(currentTabId, { action: 'reset_sent' }, () => {
+    showStatus('🔄 Reset done. Click "Check & Post" to re-post all vouches.', 'info');
   });
 });
