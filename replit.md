@@ -6,6 +6,21 @@ Dragon Services is a Discord bot management application for OSRS (Old School Run
 ## User Preferences
 Preferred communication style: Simple, everyday language.
 
+## Recent Updates (May 1, 2026)
+
+### Worker Status Command & Assigned Worker Orders
+- **`/status` slash command**: View any worker's active orders at a glance
+  - `/status` — shows your own active orders
+  - `/status worker:@Username` — shows that worker's active orders
+  - Displays order number, ticket channel link (`#ticket-xxxx`), status, and GP value for each active order
+  - Staff/admin/worker roles required
+- **Assigned Worker for Orders**: When creating an order via `/order`, you can now restrict it to a specific worker
+  - In the **Deposit** field, use format: `250 | 123456789012345678` (deposit in M | worker Discord UID)
+  - Or just `| 123456789012345678` if no deposit required
+  - The claim embed shows: `🔒 Assigned to @WorkerName only`
+  - Only the specified worker (matched by UID) can claim the order — everyone else gets a private error
+  - Backwards-compatible with old username-based fixed worker system
+
 ## Recent Updates (January 14, 2026)
 
 ### Sythe Vouch System
