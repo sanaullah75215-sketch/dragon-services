@@ -68,6 +68,14 @@ export async function registerCommands() {
           .setRequired(false)
       ),
     new SlashCommandBuilder()
+      .setName('status')
+      .setDescription('View a worker\'s active orders and ticket channels (Staff Only)')
+      .addUserOption(option =>
+        option.setName('worker')
+          .setDescription('The worker to check (mention or leave empty to check yourself)')
+          .setRequired(false)
+      ),
+    new SlashCommandBuilder()
       .setName('dink-setup')
       .setDescription('Get the Dink webhook URL for configuring RuneLite (Staff Only)'),
     new SlashCommandBuilder()
