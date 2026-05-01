@@ -407,6 +407,8 @@ async function handleSlashCommand(interaction: any) {
     await handleRsnCommand(interaction);
   } else if (commandName === 'unrsn') {
     await handleUnrsnCommand(interaction);
+  } else if (commandName === 'status') {
+    await handleWorkerStatusCommand(interaction);
   } else if (commandName === 'dink-setup') {
     await handleDinkSetupCommand(interaction);
   } else if (commandName === 'set-dink-channel') {
@@ -1646,12 +1648,24 @@ async function handleModalSubmit(interaction: any) {
       }
       const orderAmount = orderAmountM * 1000000; // Convert millions to GP
 
-      // Validate and convert deposit requirement
+      // Parse deposit + optional assigned worker UID (format: "250" or "250 | workerUID")
       let depositAmountGP = 0;
+      let assignedWorkerId: string | null = null;
       if (depositRequired && depositRequired.trim() !== '') {
-        const depositAmountM = parseInt(depositRequired.replace(/[^0-9]/g, ''));
-        if (!isNaN(depositAmountM) && depositAmountM > 0) {
-          depositAmountGP = depositAmountM * 1000000; // Convert millions to GP
+        const parts = depositRequired.split('|').map((s: string) => s.trim());
+        // First part = deposit amount
+        if (parts[0]) {
+          const depositAmountM = parseInt(parts[0].replace(/[^0-9]/g, ''));
+          if (!isNaN(depositAmountM) && depositAmountM > 0) {
+            depositAmountGP = depositAmountM * 1000000;
+          }
+        }
+        // Second part = worker UID (17-19 digit Discord ID)
+        if (parts[1]) {
+          const uid = parts[1].replace(/\D/g, '');
+          if (uid.length >= 17 && uid.length <= 19) {
+            assignedWorkerId = uid;
+          }
         }
       }
 
@@ -1675,8 +1689,8 @@ async function handleModalSubmit(interaction: any) {
         return;
       }
       
-      // Fixed worker is now always null (removed from form to make room for customer field)
-      const fixedWorker = null;
+      // Fixed worker from parsed assignedWorkerId (set above when parsing deposit field)
+      const fixedWorker = assignedWorkerId || null;
       
       // CRITICAL: Validate claim channel FIRST before any wallet operations
       // This prevents payment deduction when the claim channel is inaccessible
@@ -1784,7 +1798,7 @@ async function handleModalSubmit(interaction: any) {
         originalAmountGp: orderAmount,
         status: 'pending',
         lockedDepositGp: depositAmountGP, // Store the required deposit amount
-        notes: `Order created by staff: ${staffUsername}\nCustomer: ${customerUsername} (${customerId})\nTicket Channel: ${ticketChannelId}\nService: ${orderTitle}\nDescription: ${orderDescription}\nDeposit Required: ${depositAmountGP > 0 ? formatGPAmount(depositAmountGP) : '0 GP'}`
+        notes: `Order created by staff: ${staffUsername}\nCustomer: ${customerUsername} (${customerId})\nTicket Channel: ${ticketChannelId}\nService: ${orderTitle}\nDescription: ${orderDescription}\nDeposit Required: ${depositAmountGP > 0 ? formatGPAmount(depositAmountGP) : '0 GP'}${assignedWorkerId ? `\nFixed Worker ID: ${assignedWorkerId}` : ''}`
       });
       
       // Increment customer's order count
@@ -1870,7 +1884,7 @@ async function handleModalSubmit(interaction: any) {
         
         const claimEmbed = new EmbedBuilder()
           .setTitle('🔥 New Order Available')
-          .setDescription(`**${orderTitle}**\n${fixedWorker ? `🎯 Fixed: ${fixedWorker}` : '🌟 Open to all workers'}`)
+          .setDescription(`**${orderTitle}**\n${fixedWorker ? `🔒 Assigned to <@${fixedWorker}> only` : '🌟 Open to all workers'}`)
           .addFields([
             {
               name: '📋 Order #',
@@ -2000,15 +2014,23 @@ async function handleOrderClaim(interaction: any) {
       return;
     }
 
-    // Check if this is a fixed worker assignment
-    if (orderType === 'fixed') {
+    // Check if this order is assigned to a specific worker (by UID)
+    const fixedWorkerIdMatch = order.notes?.match(/Fixed Worker ID: (\d+)/);
+    if (fixedWorkerIdMatch) {
+      const assignedUid = fixedWorkerIdMatch[1];
+      if (assignedUid !== workerId) {
+        await interaction.reply({
+          content: `❌ This order is assigned to <@${assignedUid}> only. You cannot claim this order.`,
+          ephemeral: true
+        });
+        return;
+      }
+    } else if (orderType === 'fixed') {
+      // Legacy: check by username (old orders before UID system)
       const fixedWorker = order.notes?.match(/Fixed Worker: (.+)/)?.[1];
       if (fixedWorker && fixedWorker !== 'Any worker') {
-        // Clean the worker name (remove @ if present)
         const cleanFixedWorker = fixedWorker.replace('@', '').toLowerCase();
-        const cleanCurrentWorker = workerUsername.toLowerCase();
-        
-        if (cleanFixedWorker !== cleanCurrentWorker) {
+        if (cleanFixedWorker !== workerUsername.toLowerCase()) {
           await interaction.reply({
             content: `❌ This order is assigned to **${fixedWorker}** only. You cannot claim this order.`,
             ephemeral: true
@@ -5734,6 +5756,77 @@ async function handleEditLockDepositCommand(message: any) {
 }
 
 // Order Management Commands - Manual Order Creation for Staff
+async function handleWorkerStatusCommand(interaction: any) {
+  try {
+    // Staff / admin only
+    const hasPermission = interaction.member?.permissions?.has('Administrator') ||
+      interaction.member?.roles?.cache?.some((role: any) =>
+        ['staff','admin','worker','moderator','manager'].some(r => role.name.toLowerCase().includes(r))
+      );
+    if (!hasPermission) {
+      await interaction.reply({ content: '❌ This command is for staff only.', ephemeral: true });
+      return;
+    }
+
+    await interaction.deferReply({ ephemeral: false });
+
+    // Resolve target worker
+    const targetUser = interaction.options.getUser('worker') || interaction.user;
+    const workerId   = targetUser.id;
+    const workerTag  = targetUser.username;
+
+    // Fetch active orders for this worker
+    const activeOrders = await storage.getOrdersByWorker(workerId);
+
+    if (activeOrders.length === 0) {
+      const emptyEmbed = new EmbedBuilder()
+        .setTitle(`📋 Worker Status — ${workerTag}`)
+        .setDescription(`<@${workerId}> has no active orders right now.`)
+        .setColor(0x57F287)
+        .setFooter({ text: '🐲 Dragon Services' })
+        .setTimestamp();
+      await interaction.editReply({ embeds: [emptyEmbed] });
+      return;
+    }
+
+    // Build field list
+    const fields: { name: string; value: string; inline: boolean }[] = [];
+    for (const order of activeOrders) {
+      // Extract ticket channel from notes
+      const ticketMatch = order.notes?.match(/Ticket Channel: (\d+)/);
+      const ticketChannel = ticketMatch ? `<#${ticketMatch[1]}>` : '*(no channel)*';
+
+      const statusEmoji: Record<string, string> = {
+        claimed: '🔨', in_progress: '⚙️', confirmed: '✅', pending: '⏳',
+      };
+      const emoji = statusEmoji[order.status] || '📌';
+
+      fields.push({
+        name: `${emoji} ${order.orderNumber}`,
+        value: `**Ticket:** ${ticketChannel}\n**Status:** ${order.status}\n**Value:** ${formatGPAmount(order.totalAmountGp)} GP`,
+        inline: true,
+      });
+    }
+
+    const statusEmbed = new EmbedBuilder()
+      .setTitle(`📋 Worker Status — ${workerTag}`)
+      .setDescription(`<@${workerId}> is currently working on **${activeOrders.length}** active order(s).`)
+      .addFields(fields)
+      .setColor(0xFF6B35)
+      .setThumbnail(targetUser.displayAvatarURL())
+      .setFooter({ text: '🐲 Dragon Services' })
+      .setTimestamp();
+
+    await interaction.editReply({ embeds: [statusEmbed] });
+
+  } catch (error) {
+    console.error('Error in handleWorkerStatusCommand:', error);
+    try {
+      await interaction.editReply({ content: '❌ An error occurred while fetching worker status.' });
+    } catch { /* already replied */ }
+  }
+}
+
 async function handleOrderCommand(interaction: any) {
   try {
     storage.updateCommandUsage('order').catch(() => {});
@@ -5786,14 +5879,14 @@ async function handleOrderCommand(interaction: any) {
       .setRequired(true)
       .setMaxLength(100);
 
-    // Deposit requirement field
+    // Deposit + optional assigned worker UID field
     const depositField = new TextInputBuilder()
       .setCustomId('deposit_required')
-      .setLabel('🏦 Required Deposit (in millions)')
+      .setLabel('🏦 Deposit (M) | Worker UID (optional)')
       .setStyle(TextInputStyle.Short)
-      .setPlaceholder('🔒 250 (= 250M GP security deposit for workers)')
+      .setPlaceholder('250  OR  250 | 123456789012345678')
       .setRequired(false)
-      .setMaxLength(20);
+      .setMaxLength(50);
 
     // Order description field
     const descriptionField = new TextInputBuilder()
