@@ -109,6 +109,7 @@ export interface IStorage {
   getOrder(id: string): Promise<Order | undefined>;
   getOrderByNumber(orderNumber: string): Promise<Order | undefined>;
   getOrdersByUser(userId: string): Promise<Order[]>;
+  getOrdersByWorker(workerId: string): Promise<Order[]>;
   createOrder(insertOrder: InsertOrder): Promise<Order>;
   updateOrder(id: string, updates: Partial<Order>): Promise<Order | undefined>;
   
@@ -467,6 +468,10 @@ export class MemStorage implements IStorage {
   }
 
   async getOrdersByUser(userId: string): Promise<Order[]> {
+    throw new Error("MemStorage does not support order operations. Use DatabaseStorage instead.");
+  }
+
+  async getOrdersByWorker(workerId: string): Promise<Order[]> {
     throw new Error("MemStorage does not support order operations. Use DatabaseStorage instead.");
   }
 
@@ -1652,6 +1657,19 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(orders)
       .where(eq(orders.userId, userId))
+      .orderBy(desc(orders.createdAt));
+  }
+
+  async getOrdersByWorker(workerId: string): Promise<Order[]> {
+    return await db
+      .select()
+      .from(orders)
+      .where(
+        and(
+          eq(orders.workerId, workerId),
+          inArray(orders.status, ['claimed', 'in_progress', 'confirmed', 'pending'])
+        )
+      )
       .orderBy(desc(orders.createdAt));
   }
 
