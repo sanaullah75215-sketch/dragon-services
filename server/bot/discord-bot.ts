@@ -319,8 +319,8 @@ export async function startDiscordBot() {
         await handleCloseTicketCommand(message);
       } else if (message.content.startsWith('!add ')) {
         await handleTicketAddCommand(message);
-      } else if (message.content.startsWith('!remove ')) {
-        await handleTicketRemoveCommand(message);
+      } else if (message.content.startsWith('!kick ')) {
+        await handleTicketKickCommand(message);
       }
     });
 
@@ -7056,7 +7056,7 @@ async function handleOpenTicket(interaction: any) {
         `━━━━━━━━━━━━━━━━━━━━\n` +
         `🔧 **Staff commands in this channel:**\n` +
         `\`!add @user\` — Add someone to this ticket\n` +
-        `\`!remove @user\` — Remove someone from this ticket\n` +
+        `\`!kick @user\` — Remove someone from this ticket\n` +
         `\`!close\` — Close this ticket`
       )
       .setColor(0xFF6B35)
@@ -7145,7 +7145,7 @@ async function handleTicketAddCommand(message: any) {
   }
 }
 
-async function handleTicketRemoveCommand(message: any) {
+async function handleTicketKickCommand(message: any) {
   try {
     const ticket = await storage.getTicketByChannel(message.channel.id);
     if (!ticket) {
@@ -7164,11 +7164,10 @@ async function handleTicketRemoveCommand(message: any) {
 
     const mentioned = message.mentions.users.first();
     if (!mentioned) {
-      await message.reply('❌ Please mention a user to remove. Example: `!remove @username`');
+      await message.reply('❌ Please mention a user to remove. Example: `!kick @username`');
       return;
     }
 
-    // Don't allow removing the ticket opener or always-notify staff
     if (mentioned.id === ticket.openedByUserId) {
       await message.reply('❌ You cannot remove the ticket opener from their own ticket.');
       return;
@@ -7189,11 +7188,11 @@ async function handleTicketRemoveCommand(message: any) {
         ]
       });
     } catch (permErr) {
-      console.error('Error removing user from ticket:', permErr);
+      console.error('Error kicking user from ticket:', permErr);
       await message.reply('❌ Failed to remove user. Make sure the bot has Manage Channel permissions.');
     }
   } catch (error) {
-    console.error('Error in !remove command:', error);
+    console.error('Error in !kick command:', error);
     await message.reply('❌ An error occurred.').catch(() => {});
   }
 }
@@ -7291,12 +7290,20 @@ async function closeTicket(channel: any, closedBy: any, botClient: any) {
       console.error('Could not move ticket to closed category:', catErr);
     }
 
-    // Remove ticket opener's ability to send messages (read-only)
+    // Kick everyone out of the ticket except the 3 core staff roles
+    // (remove all user-level permission overwrites; keep @everyone deny + staff roles)
     try {
-      await channel.permissionOverwrites.edit(ticket.openedByUserId, {
-        SendMessages: false
-      });
-    } catch {}
+      const overwrites = channel.permissionOverwrites.cache;
+      for (const [id, overwrite] of overwrites) {
+        // Keep @everyone overwrite and the 3 core staff role overwrites
+        if (id === channel.guild.roles.everyone.id) continue;
+        if (TICKET_STAFF_ROLE_IDS.includes(id)) continue;
+        // Everything else (ticket opener, added users, workers) — remove access
+        await channel.permissionOverwrites.delete(id).catch(() => {});
+      }
+    } catch (kickErr) {
+      console.error('Could not kick users from closed ticket:', kickErr);
+    }
 
     // DM the transcript to the ticket opener
     try {
@@ -7325,26 +7332,32 @@ async function closeTicket(channel: any, closedBy: any, botClient: any) {
     }
 
     // Post transcript to the transcript channel
-    if (TICKET_TRANSCRIPT_CHANNEL_ID) {
+    const transcriptChannelId = process.env.TICKET_TRANSCRIPT_CHANNEL_ID || TICKET_TRANSCRIPT_CHANNEL_ID;
+    if (transcriptChannelId && transcriptChannelId.trim() !== '') {
       try {
-        const transcriptChannel = await botClient.channels.fetch(TICKET_TRANSCRIPT_CHANNEL_ID);
-        if (transcriptChannel && transcriptChannel.isTextBased()) {
+        const transcriptChannel = await botClient.channels.fetch(transcriptChannelId.trim()) as TextChannel;
+        if (transcriptChannel && typeof (transcriptChannel as any).send === 'function') {
           const logEmbed = new EmbedBuilder()
             .setTitle(`📄 Transcript — ${channel.name}`)
             .addFields(
               { name: '🎫 Opened by', value: `<@${ticket.openedByUserId}> (${ticket.openedByUsername})`, inline: true },
               { name: '🔒 Closed by', value: `<@${closedBy.id}> (${closedBy.username})`, inline: true },
-              { name: '📅 Opened', value: `<t:${Math.floor(new Date(ticket.createdAt).getTime() / 1000)}:F>`, inline: false },
+              { name: '📅 Opened', value: ticket.createdAt ? `<t:${Math.floor(new Date(ticket.createdAt).getTime() / 1000)}:F>` : 'Unknown', inline: false },
               { name: '📅 Closed', value: `<t:${Math.floor(closedAt.getTime() / 1000)}:F>`, inline: false }
             )
             .setColor(0x5865F2)
             .setFooter({ text: '🐲 Dragon Services • Ticket Logs' })
             .setTimestamp();
 
-          await (transcriptChannel as TextChannel).send({
+          // Generate a fresh buffer for the channel post (the DM send may have consumed the stream)
+          const transcriptBuffer2 = await generateTranscript(channel, ticket);
+          await transcriptChannel.send({
             embeds: [logEmbed],
-            files: [{ attachment: transcriptBuffer, name: `transcript-${channel.name}.txt` }]
+            files: [{ attachment: transcriptBuffer2, name: `transcript-${channel.name}.txt` }]
           });
+          console.log(`📄 Transcript posted to channel ${transcriptChannelId}`);
+        } else {
+          console.error(`Transcript channel ${transcriptChannelId} not found or not text-based`);
         }
       } catch (transcriptChannelError) {
         console.error('Failed to post transcript to channel:', transcriptChannelError);
