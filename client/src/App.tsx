@@ -18,6 +18,9 @@ import OrdersPage from "@/pages/OrdersPage";
 import CreateOrderPage from "@/pages/CreateOrderPage";
 import GpRatesPage from "@/pages/GpRatesPage";
 import PaymentMethodsPage from "@/pages/PaymentMethodsPage";
+import TicketsPage from "@/pages/TicketsPage";
+import TranscriptPage from "@/pages/TranscriptPage";
+import TicketSettingsPage from "@/pages/TicketSettingsPage";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -37,6 +40,9 @@ function Router() {
       <Route path="/admin/payment-methods" component={PaymentMethodsPage} />
       <Route path="/orders" component={OrdersPage} />
       <Route path="/create-order" component={CreateOrderPage} />
+      <Route path="/tickets" component={TicketsPage} />
+      <Route path="/tickets/settings" component={TicketSettingsPage} />
+      <Route path="/tickets/:id/transcript" component={TranscriptPage} />
       <Route component={NotFound} />
     </Switch>
   );
