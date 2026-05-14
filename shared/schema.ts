@@ -513,18 +513,19 @@ export type InsertSytheVouch = z.infer<typeof insertSytheVouchSchema>;
 // Tickets table - tracks support/service tickets created via the bot
 export const tickets = pgTable("tickets", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  ticketNumber: integer("ticket_number"),          // sequential: 1, 2, 3...
+  ticketNumber: integer("ticket_number"),
   channelId: text("channel_id").notNull().unique(),
   guildId: text("guild_id").notNull(),
   openedByUserId: text("opened_by_user_id").notNull(),
   openedByUsername: text("opened_by_username").notNull(),
-  topic: text("topic"), // Optional topic/service name
+  topic: text("topic"),
   status: text("status").notNull().default("open"), // open | closed
   closedByUserId: text("closed_by_user_id"),
   closedByUsername: text("closed_by_username"),
   closedAt: timestamp("closed_at"),
-  scheduledDeleteAt: timestamp("scheduled_delete_at"), // closedAt + 3 days
+  scheduledDeleteAt: timestamp("scheduled_delete_at"),
   channelDeleted: boolean("channel_deleted").default(false).notNull(),
+  transcriptHtml: text("transcript_html"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -535,3 +536,32 @@ export const insertTicketSchema = createInsertSchema(tickets).omit({
 
 export type Ticket = typeof tickets.$inferSelect;
 export type InsertTicket = z.infer<typeof insertTicketSchema>;
+
+// Ticket panels — configurable panels posted to channels (like tickettool.xyz)
+export const ticketPanels = pgTable("ticket_panels", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  channelId: text("channel_id").notNull(),
+  openCategoryId: text("open_category_id").notNull(),
+  closedCategoryId: text("closed_category_id").notNull(),
+  buttonLabel: text("button_label").notNull().default("Open Ticket"),
+  buttonEmoji: text("button_emoji").default("🎫"),
+  buttonColor: text("button_color").notNull().default("primary"),
+  description: text("description"),
+  pingRoleIds: text("ping_role_ids").array().default(sql`'{}'::text[]`),
+  enabled: boolean("enabled").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertTicketPanelSchema = createInsertSchema(ticketPanels).omit({ id: true, createdAt: true });
+export type TicketPanel = typeof ticketPanels.$inferSelect;
+export type InsertTicketPanel = z.infer<typeof insertTicketPanelSchema>;
+
+// Ticket settings — key/value store for global ticket config
+export const ticketSettings = pgTable("ticket_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type TicketSetting = typeof ticketSettings.$inferSelect;
