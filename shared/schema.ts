@@ -509,3 +509,28 @@ export const insertSytheVouchSchema = createInsertSchema(sytheVouches).omit({
 
 export type SytheVouch = typeof sytheVouches.$inferSelect;
 export type InsertSytheVouch = z.infer<typeof insertSytheVouchSchema>;
+
+// Tickets table - tracks support/service tickets created via the bot
+export const tickets = pgTable("tickets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  channelId: text("channel_id").notNull().unique(),
+  guildId: text("guild_id").notNull(),
+  openedByUserId: text("opened_by_user_id").notNull(),
+  openedByUsername: text("opened_by_username").notNull(),
+  topic: text("topic"), // Optional topic/service name
+  status: text("status").notNull().default("open"), // open | closed
+  closedByUserId: text("closed_by_user_id"),
+  closedByUsername: text("closed_by_username"),
+  closedAt: timestamp("closed_at"),
+  scheduledDeleteAt: timestamp("scheduled_delete_at"), // closedAt + 3 days
+  channelDeleted: boolean("channel_deleted").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertTicketSchema = createInsertSchema(tickets).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type Ticket = typeof tickets.$inferSelect;
+export type InsertTicket = z.infer<typeof insertTicketSchema>;
