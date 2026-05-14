@@ -7,7 +7,7 @@ import BotStatus from "@/components/bot-status";
 import ServiceCard from "@/components/service-card";
 import LoadingWithTimeout from "@/components/loading-with-timeout";
 import { Service } from "@shared/schema";
-import { Settings, ExternalLink, Bot, Gift, Wallet, Package, ShoppingCart, AlertCircle, DollarSign, Menu, Download } from "lucide-react";
+import { Settings, ExternalLink, Bot, Gift, Wallet, Package, ShoppingCart, AlertCircle, DollarSign, Menu, Download, Ticket } from "lucide-react";
 import { useState } from "react";
 import {
   Sheet,
@@ -44,6 +44,7 @@ export default function Home() {
     { href: "/admin/wallets", label: "Wallet Management", icon: Wallet, testId: "button-wallet" },
     { href: "/orders", label: "Orders", icon: Package, testId: "button-orders" },
     { href: "/create-order", label: "Create Order", icon: ShoppingCart, testId: "button-create-order" },
+    { href: "/tickets", label: "Tickets", icon: Ticket, testId: "button-tickets" },
     { href: "/bot-management", label: "Management", icon: Settings, testId: "button-management" },
   ];
 
@@ -100,14 +101,14 @@ export default function Home() {
             </div>
             
             {/* Desktop Navigation */}
-            <div className="hidden xl:flex items-center space-x-2">
+            <div className="hidden lg:flex items-center gap-1 flex-wrap justify-end max-w-[calc(100%-220px)]">
               <BotStatus status={botStatus} />
               {navigationLinks.map((link) => {
                 const Icon = link.icon;
                 return (
                   <Link key={link.href} href={link.href}>
-                    <Button variant="outline" size="sm" data-testid={link.testId}>
-                      <Icon className="h-4 w-4 mr-2" />
+                    <Button variant="outline" size="sm" className="text-xs px-2 py-1 h-8" data-testid={link.testId}>
+                      <Icon className="h-3 w-3 mr-1 shrink-0" />
                       {link.label}
                     </Button>
                   </Link>
@@ -116,7 +117,7 @@ export default function Home() {
             </div>
 
             {/* Mobile Menu */}
-            <div className="flex xl:hidden items-center gap-2">
+            <div className="flex lg:hidden items-center gap-2">
               <BotStatus status={botStatus} />
               <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
                 <SheetTrigger asChild>
