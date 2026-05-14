@@ -42,6 +42,7 @@ if [ "$TABLE_EXISTS" = "t" ]; then
   psql "$DATABASE_URL" -c "
     CREATE TABLE IF NOT EXISTS tickets (
       id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+      ticket_number integer,
       channel_id text NOT NULL UNIQUE,
       guild_id text NOT NULL,
       opened_by_user_id text NOT NULL,
@@ -55,6 +56,11 @@ if [ "$TABLE_EXISTS" = "t" ]; then
       channel_deleted boolean NOT NULL DEFAULT false,
       created_at timestamp NOT NULL DEFAULT now()
     );
+  " 2>&1 | grep -v "^$" || true
+
+  # Patch: add ticket_number column to existing tickets table
+  psql "$DATABASE_URL" -c "
+    ALTER TABLE tickets ADD COLUMN IF NOT EXISTS ticket_number integer;
   " 2>&1 | grep -v "^$" || true
 
   echo "     Schema patches done!"
