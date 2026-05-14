@@ -38,6 +38,25 @@ if [ "$TABLE_EXISTS" = "t" ]; then
     END \$\$;
   " 2>&1 | grep -v "^$" || true
 
+  # Patch: create tickets table if missing
+  psql "$DATABASE_URL" -c "
+    CREATE TABLE IF NOT EXISTS tickets (
+      id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+      channel_id text NOT NULL UNIQUE,
+      guild_id text NOT NULL,
+      opened_by_user_id text NOT NULL,
+      opened_by_username text NOT NULL,
+      topic text,
+      status text NOT NULL DEFAULT 'open',
+      closed_by_user_id text,
+      closed_by_username text,
+      closed_at timestamp,
+      scheduled_delete_at timestamp,
+      channel_deleted boolean NOT NULL DEFAULT false,
+      created_at timestamp NOT NULL DEFAULT now()
+    );
+  " 2>&1 | grep -v "^$" || true
+
   echo "     Schema patches done!"
 else
   echo "     First run - creating tables..."
