@@ -58,9 +58,37 @@ if [ "$TABLE_EXISTS" = "t" ]; then
     );
   " 2>&1 | grep -v "^$" || true
 
-  # Patch: add ticket_number column to existing tickets table
+  # Patch: add ticket_number and transcript_html columns to existing tickets table
   psql "$DATABASE_URL" -c "
     ALTER TABLE tickets ADD COLUMN IF NOT EXISTS ticket_number integer;
+    ALTER TABLE tickets ADD COLUMN IF NOT EXISTS transcript_html text;
+  " 2>&1 | grep -v "^$" || true
+
+  # Patch: create ticket_panels table if missing
+  psql "$DATABASE_URL" -c "
+    CREATE TABLE IF NOT EXISTS ticket_panels (
+      id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+      name text NOT NULL,
+      channel_id text NOT NULL,
+      open_category_id text NOT NULL,
+      closed_category_id text NOT NULL,
+      button_label text NOT NULL DEFAULT 'Open Ticket',
+      button_emoji text DEFAULT '🎫',
+      button_color text NOT NULL DEFAULT 'primary',
+      description text,
+      ping_role_ids text[] DEFAULT '{}',
+      enabled boolean NOT NULL DEFAULT true,
+      created_at timestamp NOT NULL DEFAULT now()
+    );
+  " 2>&1 | grep -v "^$" || true
+
+  # Patch: create ticket_settings table if missing
+  psql "$DATABASE_URL" -c "
+    CREATE TABLE IF NOT EXISTS ticket_settings (
+      key text PRIMARY KEY,
+      value text NOT NULL,
+      updated_at timestamp NOT NULL DEFAULT now()
+    );
   " 2>&1 | grep -v "^$" || true
 
   echo "     Schema patches done!"
