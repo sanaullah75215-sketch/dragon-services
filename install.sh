@@ -96,6 +96,13 @@ if [ ! -f "$INSTALL_DIR/.env" ]; then
   read -p "   Dashboard password (or ENTER to skip): " DASH_PASS < /dev/tty
   echo ""
 
+  echo "4) Ticket Transcript Channel ID (OPTIONAL)"
+  echo "   Paste the Discord channel ID where closed ticket transcripts should be posted."
+  echo "   Leave blank to skip (transcripts will only be DM'd to the user)."
+  echo ""
+  read -p "   Transcript channel ID (or ENTER to skip): " TRANSCRIPT_ID < /dev/tty
+  echo ""
+
   cat > "$INSTALL_DIR/.env" <<EOF
 DISCORD_BOT_TOKEN=${BOT_TOKEN}
 DB_PASSWORD=${DB_PASS}
@@ -107,6 +114,11 @@ EOF
     echo "✅ Dashboard password set"
   fi
 
+  if [ -n "$TRANSCRIPT_ID" ]; then
+    echo "TICKET_TRANSCRIPT_CHANNEL_ID=${TRANSCRIPT_ID}" >> "$INSTALL_DIR/.env"
+    echo "✅ Transcript channel saved: $TRANSCRIPT_ID"
+  fi
+
   echo "✅ Config saved"
 
 else
@@ -114,14 +126,13 @@ else
   echo "✅ Existing config found - keeping all settings (data is safe)"
   echo ""
 
-  # Offer to set/update dashboard password only
+  # ── Offer to set/update dashboard password ─────────────────────────────────
   CURRENT_DASH=$(grep "^DASHBOARD_PASSWORD=" "$INSTALL_DIR/.env" | cut -d= -f2- || true)
   if [ -n "$CURRENT_DASH" ]; then
     echo "   Dashboard password is currently SET."
     read -p "   Change dashboard password? (y/N): " CHANGE_DASH < /dev/tty
     if [[ "$CHANGE_DASH" == "y" || "$CHANGE_DASH" == "Y" ]]; then
       read -p "   New dashboard password: " DASH_PASS < /dev/tty
-      # Remove old line and add new one
       sed -i '/^DASHBOARD_PASSWORD=/d' "$INSTALL_DIR/.env"
       echo "DASHBOARD_PASSWORD=${DASH_PASS}" >> "$INSTALL_DIR/.env"
       echo "✅ Dashboard password updated"
@@ -134,6 +145,36 @@ else
       if [ -n "$DASH_PASS" ]; then
         echo "DASHBOARD_PASSWORD=${DASH_PASS}" >> "$INSTALL_DIR/.env"
         echo "✅ Dashboard password set"
+      fi
+    fi
+  fi
+
+  echo ""
+
+  # ── Offer to set/update transcript channel ID ──────────────────────────────
+  CURRENT_TRANSCRIPT=$(grep "^TICKET_TRANSCRIPT_CHANNEL_ID=" "$INSTALL_DIR/.env" | cut -d= -f2- || true)
+  if [ -n "$CURRENT_TRANSCRIPT" ]; then
+    echo "   Transcript channel is currently set to: $CURRENT_TRANSCRIPT"
+    read -p "   Change transcript channel ID? (y/N): " CHANGE_TRANSCRIPT < /dev/tty
+    if [[ "$CHANGE_TRANSCRIPT" == "y" || "$CHANGE_TRANSCRIPT" == "Y" ]]; then
+      read -p "   New transcript channel ID: " NEW_TRANSCRIPT < /dev/tty
+      if [ -n "$NEW_TRANSCRIPT" ]; then
+        sed -i '/^TICKET_TRANSCRIPT_CHANNEL_ID=/d' "$INSTALL_DIR/.env"
+        echo "TICKET_TRANSCRIPT_CHANNEL_ID=${NEW_TRANSCRIPT}" >> "$INSTALL_DIR/.env"
+        echo "✅ Transcript channel updated: $NEW_TRANSCRIPT"
+      fi
+    else
+      echo "✅ Transcript channel unchanged: $CURRENT_TRANSCRIPT"
+    fi
+  else
+    echo "   Transcript channel is NOT set (transcripts go to DM only)."
+    read -p "   Set a transcript channel ID now? (Y/n): " SET_TRANSCRIPT < /dev/tty
+    if [[ "$SET_TRANSCRIPT" != "n" && "$SET_TRANSCRIPT" != "N" ]]; then
+      read -p "   Transcript channel ID: " TRANSCRIPT_ID < /dev/tty
+      if [ -n "$TRANSCRIPT_ID" ]; then
+        sed -i '/^TICKET_TRANSCRIPT_CHANNEL_ID=/d' "$INSTALL_DIR/.env"
+        echo "TICKET_TRANSCRIPT_CHANNEL_ID=${TRANSCRIPT_ID}" >> "$INSTALL_DIR/.env"
+        echo "✅ Transcript channel saved: $TRANSCRIPT_ID"
       fi
     fi
   fi
