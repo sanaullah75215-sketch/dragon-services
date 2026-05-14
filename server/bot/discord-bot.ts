@@ -23,8 +23,12 @@ const WITHDRAWAL_NOTIFICATION_CHANNEL_ID = process.env.WITHDRAWAL_NOTIFICATION_C
 // Ticket transcript channel - where closed ticket logs are posted
 const TICKET_TRANSCRIPT_CHANNEL_ID = process.env.TICKET_TRANSCRIPT_CHANNEL_ID || '';
 
-// Users who are ALWAYS added to every ticket (owner, head staff, bot)
-const TICKET_ALWAYS_NOTIFY_IDS = ['1391833761573765193', '1391833925671845899', '1391834089518268627'];
+// Role IDs that are ALWAYS added to every ticket and pinged on open (owner, staff, bot roles)
+const TICKET_STAFF_ROLE_IDS = ['1391833761573765193', '1391833925671845899', '1391834089518268627'];
+
+// Category IDs for ticket channels
+const TICKET_OPEN_CATEGORY_ID  = '1391924427700179035';
+const TICKET_CLOSED_CATEGORY_ID = '1432078276679172186';
 
 /**
  * Notify worker when they reach balance milestones
@@ -7009,11 +7013,9 @@ async function handleOpenTicket(interaction: any) {
       }
     ];
 
-    // Add the always-present staff/owner/bot user IDs
-    for (const uid of TICKET_ALWAYS_NOTIFY_IDS) {
-      if (uid !== user.id) {
-        permOverwrites.push({ id: uid, allow: staffPerms });
-      }
+    // Add the always-present staff role IDs
+    for (const roleId of TICKET_STAFF_ROLE_IDS) {
+      permOverwrites.push({ id: roleId, allow: staffPerms });
     }
 
     const channelName = `ticket-${user.username.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').substring(0, 22)}`;
@@ -7022,6 +7024,7 @@ async function handleOpenTicket(interaction: any) {
       name: channelName,
       type: ChannelType.GuildText,
       topic: `ticket:${user.id}`,
+      parent: TICKET_OPEN_CATEGORY_ID,
       permissionOverwrites: permOverwrites
     }) as TextChannel;
 
@@ -7071,10 +7074,8 @@ async function handleOpenTicket(interaction: any) {
 
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(closeBtn);
 
-    // Ping the opener + always-notify staff so they get notifications
-    const pingLine = [user.id, ...TICKET_ALWAYS_NOTIFY_IDS.filter(id => id !== user.id)]
-      .map(id => `<@${id}>`)
-      .join(' ');
+    // Ping the opener (user mention) + staff roles (role mentions) for notifications
+    const pingLine = `<@${user.id}> ` + TICKET_STAFF_ROLE_IDS.map(id => `<@&${id}>`).join(' ');
 
     await ticketChannel.send({
       content: pingLine,
@@ -7172,7 +7173,7 @@ async function handleTicketRemoveCommand(message: any) {
       await message.reply('❌ You cannot remove the ticket opener from their own ticket.');
       return;
     }
-    if (TICKET_ALWAYS_NOTIFY_IDS.includes(mentioned.id)) {
+    if (TICKET_STAFF_ROLE_IDS.includes(mentioned.id)) {
       await message.reply('❌ You cannot remove core staff from tickets.');
       return;
     }
@@ -7282,6 +7283,13 @@ async function closeTicket(channel: any, closedBy: any, botClient: any) {
       .setTimestamp();
 
     await channel.send({ embeds: [closingEmbed] });
+
+    // Move channel to the closed tickets category
+    try {
+      await channel.setParent(TICKET_CLOSED_CATEGORY_ID, { lockPermissions: false });
+    } catch (catErr) {
+      console.error('Could not move ticket to closed category:', catErr);
+    }
 
     // Remove ticket opener's ability to send messages (read-only)
     try {
