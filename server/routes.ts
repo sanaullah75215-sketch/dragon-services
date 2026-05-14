@@ -1829,7 +1829,7 @@ async function postPanelToDiscord(panel: any): Promise<void> {
     .setTimestamp();
 
   const btn = new ButtonBuilder()
-    .setCustomId('open_ticket')
+    .setCustomId(`open_ticket:${panel.id}`)
     .setLabel(btnLabel)
     .setStyle(btnStyle);
 
