@@ -205,6 +205,8 @@ export interface IStorage {
   markSytheVouchPosted(id: string, discordMessageId: string): Promise<SytheVouch | undefined>;
 
   // Ticket operations
+  getNextTicketNumber(): Promise<number>;
+  getOpenTicketByUser(userId: string): Promise<Ticket | undefined>;
   createTicket(insertTicket: InsertTicket): Promise<Ticket>;
   getTicketByChannel(channelId: string): Promise<Ticket | undefined>;
   updateTicket(id: string, updates: Partial<Ticket>): Promise<Ticket | undefined>;
@@ -2203,6 +2205,21 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Ticket operations
+  async getNextTicketNumber(): Promise<number> {
+    const result = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(tickets);
+    return (Number(result[0]?.count) || 0) + 1;
+  }
+
+  async getOpenTicketByUser(userId: string): Promise<Ticket | undefined> {
+    const [ticket] = await db
+      .select()
+      .from(tickets)
+      .where(and(eq(tickets.openedByUserId, userId), eq(tickets.status, 'open')));
+    return ticket || undefined;
+  }
+
   async createTicket(insertTicket: InsertTicket): Promise<Ticket> {
     const [ticket] = await db
       .insert(tickets)
