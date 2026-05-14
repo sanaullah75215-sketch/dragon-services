@@ -327,3 +327,18 @@ CREATE INDEX "idx_wallet_transactions_wallet_id" ON "wallet_transactions" USING 
 CREATE INDEX "idx_wallet_transactions_user_id" ON "wallet_transactions" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "idx_wallet_transactions_type" ON "wallet_transactions" USING btree ("type");--> statement-breakpoint
 CREATE INDEX "idx_wallet_transactions_created_at" ON "wallet_transactions" USING btree ("created_at");
+CREATE TABLE IF NOT EXISTS "tickets" (
+  "id" varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+  "channel_id" text NOT NULL UNIQUE,
+  "guild_id" text NOT NULL,
+  "opened_by_user_id" text NOT NULL,
+  "opened_by_username" text NOT NULL,
+  "topic" text,
+  "status" text NOT NULL DEFAULT 'open',
+  "closed_by_user_id" text,
+  "closed_by_username" text,
+  "closed_at" timestamp,
+  "scheduled_delete_at" timestamp,
+  "channel_deleted" boolean NOT NULL DEFAULT false,
+  "created_at" timestamp NOT NULL DEFAULT now()
+);
