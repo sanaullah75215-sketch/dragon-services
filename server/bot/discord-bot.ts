@@ -7317,9 +7317,11 @@ async function closeTicket(channel: any, closedBy: any, botClient: any) {
     // (fetching messages after permissions change can fail)
     let transcriptBuffer: Buffer;
     let transcriptBuffer2: Buffer;
+    let transcriptHtml: string | undefined;
     try {
       transcriptBuffer  = await generateTranscript(channel, ticket);
-      transcriptBuffer2 = await generateTranscript(channel, ticket);
+      transcriptBuffer2 = transcriptBuffer; // reuse — same HTML
+      transcriptHtml = transcriptBuffer.toString('utf8');
     } catch (tErr) {
       console.error('Failed to generate transcript:', tErr);
       transcriptBuffer  = Buffer.from('Transcript unavailable.\n');
@@ -7331,7 +7333,8 @@ async function closeTicket(channel: any, closedBy: any, botClient: any) {
       closedByUserId: closedBy.id,
       closedByUsername: closedBy.username,
       closedAt,
-      scheduledDeleteAt
+      scheduledDeleteAt,
+      ...(transcriptHtml ? { transcriptHtml } : {}),
     });
 
     // Post closing message in the ticket channel
@@ -7439,70 +7442,140 @@ async function closeTicket(channel: any, closedBy: any, botClient: any) {
   }
 }
 
-async function generateTranscript(channel: any, ticket: any): Promise<Buffer> {
-  const lines: string[] = [];
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
-  lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  lines.push('                 🐲 DRAGON SERVICES — TICKET TRANSCRIPT');
-  lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  lines.push(`Channel:    #${channel.name}`);
-  lines.push(`Opened by:  ${ticket.openedByUsername} (${ticket.openedByUserId})`);
-  lines.push(`Opened at:  ${new Date(ticket.createdAt).toUTCString()}`);
-  lines.push(`Closed at:  ${new Date().toUTCString()}`);
-  lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  lines.push('');
+async function generateTranscript(channel: any, ticket: any): Promise<Buffer> {
+  let allMessages: any[] = [];
 
   try {
-    // Fetch up to 500 messages (Discord max per fetch is 100; loop)
-    let allMessages: any[] = [];
     let lastId: string | undefined;
-
     for (let i = 0; i < 5; i++) {
       const options: any = { limit: 100 };
       if (lastId) options.before = lastId;
-
       const batch = await channel.messages.fetch(options);
       if (batch.size === 0) break;
-
       allMessages = allMessages.concat(Array.from(batch.values()));
       lastId = batch.last()?.id;
       if (batch.size < 100) break;
     }
-
-    // Sort oldest first
     allMessages.sort((a: any, b: any) => a.createdTimestamp - b.createdTimestamp);
-
-    for (const msg of allMessages) {
-      const timestamp = new Date(msg.createdTimestamp).toUTCString();
-      const author = `${msg.author.username}${msg.author.bot ? ' [BOT]' : ''}`;
-      const content = msg.content || '[no text content]';
-
-      lines.push(`[${timestamp}] ${author}: ${content}`);
-
-      if (msg.embeds.length > 0) {
-        for (const embed of msg.embeds) {
-          if (embed.title) lines.push(`  [Embed Title] ${embed.title}`);
-          if (embed.description) lines.push(`  [Embed] ${embed.description.substring(0, 200)}`);
-        }
-      }
-
-      if (msg.attachments.size > 0) {
-        for (const att of msg.attachments.values()) {
-          lines.push(`  [Attachment] ${att.url}`);
-        }
-      }
-    }
   } catch (fetchError) {
-    lines.push('[Could not fetch messages]');
     console.error('Error fetching messages for transcript:', fetchError);
   }
 
-  lines.push('');
-  lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  lines.push('                        END OF TRANSCRIPT');
-  lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  const ticketNum = ticket.ticketNumber != null
+    ? `#${String(ticket.ticketNumber).padStart(3, '0')}`
+    : ticket.id.slice(0, 8);
 
-  return Buffer.from(lines.join('\n'), 'utf8');
+  const closedAt = new Date().toUTCString();
+
+  // Build HTML rows
+  let rows = '';
+  for (const msg of allMessages) {
+    const ts = new Date(msg.createdTimestamp).toUTCString();
+    const isBot = msg.author.bot;
+    const avatarUrl = msg.author.displayAvatarURL?.({ size: 32 }) ?? '';
+    const username = escapeHtml(`${msg.author.username}${isBot ? ' 🤖' : ''}`);
+    const content = msg.content ? escapeHtml(msg.content).replace(/\n/g, '<br>') : '';
+
+    let embedHtml = '';
+    for (const embed of msg.embeds) {
+      const title = embed.title ? `<div class="embed-title">${escapeHtml(embed.title)}</div>` : '';
+      const desc = embed.description
+        ? `<div class="embed-desc">${escapeHtml(embed.description.slice(0, 1000)).replace(/\n/g, '<br>')}</div>`
+        : '';
+      const fields = embed.fields.map((f: any) =>
+        `<div class="embed-field"><span class="embed-field-name">${escapeHtml(f.name)}</span><span class="embed-field-val">${escapeHtml(f.value)}</span></div>`
+      ).join('');
+      const color = embed.color ? `#${embed.color.toString(16).padStart(6, '0')}` : '#5865F2';
+      embedHtml += `<div class="embed" style="border-left:3px solid ${color}">${title}${desc}${fields}</div>`;
+    }
+
+    let attachHtml = '';
+    for (const att of msg.attachments.values()) {
+      const url = escapeHtml((att as any).url);
+      const name = escapeHtml((att as any).name ?? 'file');
+      if (/\.(png|jpg|jpeg|gif|webp)$/i.test((att as any).name ?? '')) {
+        attachHtml += `<div class="attachment"><img src="${url}" alt="${name}" style="max-width:300px;max-height:200px;border-radius:4px"></div>`;
+      } else {
+        attachHtml += `<div class="attachment"><a href="${url}" target="_blank">📎 ${name}</a></div>`;
+      }
+    }
+
+    rows += `
+    <div class="msg${isBot ? ' bot' : ''}">
+      <img class="avatar" src="${avatarUrl}" alt="" onerror="this.style.display='none'">
+      <div class="msg-body">
+        <div class="msg-header">
+          <span class="username">${username}</span>
+          <span class="ts">${ts}</span>
+        </div>
+        ${content ? `<div class="content">${content}</div>` : ''}
+        ${embedHtml}
+        ${attachHtml}
+      </div>
+    </div>`;
+  }
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ticket ${escapeHtml(ticketNum)} — Dragon Services</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#1e1f22;color:#dcddde;font-family:'Segoe UI',sans-serif;font-size:14px}
+  header{background:#2b2d31;padding:20px 24px;border-bottom:1px solid #1e1f22}
+  header h1{font-size:18px;color:#fff;margin-bottom:4px}
+  header p{font-size:12px;color:#949ba4}
+  .messages{max-width:900px;margin:0 auto;padding:16px 24px}
+  .msg{display:flex;gap:12px;padding:6px 0;align-items:flex-start}
+  .msg:hover{background:#2e3035;border-radius:4px}
+  .avatar{width:36px;height:36px;border-radius:50%;background:#5865f2;flex-shrink:0;object-fit:cover}
+  .msg-body{flex:1;min-width:0}
+  .msg-header{display:flex;align-items:baseline;gap:8px;margin-bottom:2px}
+  .username{font-weight:600;color:#fff;font-size:15px}
+  .msg.bot .username{color:#5865f2}
+  .ts{font-size:11px;color:#72767d}
+  .content{line-height:1.5;word-wrap:break-word;white-space:pre-wrap}
+  .embed{background:#2b2d31;border-radius:4px;padding:10px 12px;margin-top:4px;max-width:520px}
+  .embed-title{font-weight:600;margin-bottom:4px;color:#fff}
+  .embed-desc{font-size:13px;color:#dcddde;line-height:1.4}
+  .embed-field{margin-top:6px;display:flex;gap:6px;flex-direction:column}
+  .embed-field-name{font-weight:600;font-size:12px;color:#b5bac1}
+  .embed-field-val{font-size:13px}
+  .attachment{margin-top:4px}
+  .attachment a{color:#00b0f4;text-decoration:none}
+  .attachment a:hover{text-decoration:underline}
+  footer{text-align:center;padding:20px;color:#72767d;font-size:12px;border-top:1px solid #1e1f22}
+</style>
+</head>
+<body>
+<header>
+  <h1>🐲 Dragon Services — Ticket Transcript ${escapeHtml(ticketNum)}</h1>
+  <p>
+    Channel: <strong>#${escapeHtml(channel.name)}</strong> &nbsp;|&nbsp;
+    Opened by: <strong>${escapeHtml(ticket.openedByUsername ?? 'Unknown')} (${escapeHtml(ticket.openedByUserId ?? '')})</strong> &nbsp;|&nbsp;
+    Opened: <strong>${new Date(ticket.createdAt).toUTCString()}</strong> &nbsp;|&nbsp;
+    Closed: <strong>${closedAt}</strong>
+  </p>
+</header>
+<div class="messages">
+  ${rows || '<p style="color:#72767d;padding:20px 0">No messages found.</p>'}
+</div>
+<footer>🐲 Dragon Services · Transcript generated ${closedAt}</footer>
+</body>
+</html>`;
+
+  return Buffer.from(html, 'utf8');
 }
 
 function startTicketDeletionScheduler(botClient: any) {
