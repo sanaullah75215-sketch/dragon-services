@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import { startDiscordBot, getBotStatus, client } from "./bot/discord-bot";
 import { insertServiceSchema, insertUserInteractionSchema, insertSpecialOfferSchema, insertUserWalletSchema, insertWalletTransactionSchema, insertPaymentMethodSchema, insertGpRateSchema } from "@shared/schema";
 import ExcelJS from 'exceljs';
-import { EmbedBuilder, TextChannel } from 'discord.js';
+import { EmbedBuilder, TextChannel, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Start Discord bot
@@ -1588,8 +1588,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/ticket-panels", async (req, res) => {
-    try { res.status(201).json(await storage.createTicketPanel(req.body)); }
-    catch (e) { res.status(400).json({ message: "Failed to create panel" }); }
+    try {
+      const panel = await storage.createTicketPanel(req.body);
+      res.status(201).json(panel);
+      // Fire-and-forget: post panel embed to Discord channel
+      postPanelToDiscord(panel).catch(e => console.error('Failed to post panel to Discord:', e));
+    } catch (e) { res.status(400).json({ message: "Failed to create panel" }); }
   });
 
   app.put("/api/ticket-panels/:id", async (req, res) => {
@@ -1597,6 +1601,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const panel = await storage.updateTicketPanel(req.params.id, req.body);
       if (!panel) return res.status(404).json({ message: "Panel not found" });
       res.json(panel);
+      // Fire-and-forget: re-post updated panel embed to Discord channel
+      postPanelToDiscord(panel).catch(e => console.error('Failed to post panel to Discord:', e));
     } catch (e) { res.status(400).json({ message: "Failed to update panel" }); }
   });
 
@@ -1785,6 +1791,62 @@ function createDinkEmbed(payload: any, eventType: string, playerName: string): E
   });
   
   return embed;
+}
+
+// ─── Post a ticket panel embed+button to its configured Discord channel ────────
+async function postPanelToDiscord(panel: any): Promise<void> {
+  if (!client || !client.isReady()) return; // bot not running (dev mode)
+  if (!panel.channelId) return;
+
+  const channel = await client.channels.fetch(panel.channelId).catch(() => null) as TextChannel | null;
+  if (!channel || typeof channel.send !== 'function') {
+    console.error(`Panel channel ${panel.channelId} not found or not a text channel`);
+    return;
+  }
+
+  // Map stored color name → Discord ButtonStyle
+  const styleMap: Record<string, ButtonStyle> = {
+    primary:   ButtonStyle.Primary,
+    secondary: ButtonStyle.Secondary,
+    success:   ButtonStyle.Success,
+    danger:    ButtonStyle.Danger,
+  };
+  const btnStyle = styleMap[panel.buttonColor] ?? ButtonStyle.Primary;
+  const btnLabel = `${panel.buttonEmoji ?? '🎫'} ${panel.buttonLabel ?? 'Open Ticket'}`;
+
+  const embed = new EmbedBuilder()
+    .setTitle(`🎫 ${panel.name}`)
+    .setDescription(
+      panel.description ||
+      'Click the button below to open a private support ticket.\nA staff member will assist you shortly.'
+    )
+    .setColor(0xFF6B35)
+    .setThumbnail('https://oldschool.runescape.wiki/images/thumb/4/4e/Dragon_full_helm.png/130px-Dragon_full_helm.png')
+    .setFooter({
+      text: '🐲 Dragon Services • One ticket per person',
+      iconURL: 'https://oldschool.runescape.wiki/images/thumb/4/4e/Dragon_full_helm.png/21px-Dragon_full_helm.png',
+    })
+    .setTimestamp();
+
+  const btn = new ButtonBuilder()
+    .setCustomId('open_ticket')
+    .setLabel(btnLabel)
+    .setStyle(btnStyle);
+
+  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(btn);
+
+  // Ping configured roles if any
+  const rolePings = (panel.pingRoleIds ?? [])
+    .map((id: string) => `<@&${id}>`)
+    .join(' ');
+
+  await channel.send({
+    content: rolePings || undefined,
+    embeds: [embed],
+    components: [row],
+  });
+
+  console.log(`📋 Panel "${panel.name}" posted to channel ${panel.channelId}`);
 }
 
 // Helper to format GP values
