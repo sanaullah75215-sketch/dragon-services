@@ -23,9 +23,6 @@ const WITHDRAWAL_NOTIFICATION_CHANNEL_ID = process.env.WITHDRAWAL_NOTIFICATION_C
 // Ticket transcript channel - where closed ticket logs are posted
 const TICKET_TRANSCRIPT_CHANNEL_ID = process.env.TICKET_TRANSCRIPT_CHANNEL_ID || '';
 
-// Staff/admin role IDs used for ticket permissions
-const STAFF_ROLE_IDS = (process.env.STAFF_ROLE_IDS || '').split(',').filter(Boolean);
-
 /**
  * Notify worker when they reach balance milestones
  * Sends a message to the withdrawal notification channel when balance reaches 400M, 800M, 1.2B, etc.
