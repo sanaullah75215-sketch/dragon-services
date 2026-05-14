@@ -2382,7 +2382,7 @@ async function handleButtonInteraction(interaction: any) {
       return;
     }
 
-    if (customId === 'open_ticket') {
+    if (customId === 'open_ticket' || customId.startsWith('open_ticket:')) {
       await handleOpenTicket(interaction);
       return;
     }
@@ -6977,6 +6977,19 @@ async function handleOpenTicket(interaction: any) {
     const guild = interaction.guild;
     const user = interaction.user;
 
+    // Resolve which panel was clicked (customId = "open_ticket:panelId" or legacy "open_ticket")
+    const customIdParts = (interaction.customId as string).split(':');
+    const panelId = customIdParts[1] ?? null;
+    let panelOpenCategoryId: string = TICKET_OPEN_CATEGORY_ID;
+    let panelClosedCategoryId: string = TICKET_CLOSED_CATEGORY_ID;
+    if (panelId) {
+      const panel = await storage.getTicketPanel(panelId).catch(() => null);
+      if (panel) {
+        panelOpenCategoryId   = panel.openCategoryId   || TICKET_OPEN_CATEGORY_ID;
+        panelClosedCategoryId = panel.closedCategoryId || TICKET_CLOSED_CATEGORY_ID;
+      }
+    }
+
     // Check for existing open ticket for this user via DB
     const existingTicket = await storage.getOpenTicketByUser(user.id);
     if (existingTicket) {
@@ -7041,7 +7054,7 @@ async function handleOpenTicket(interaction: any) {
       name: channelName,
       type: ChannelType.GuildText,
       topic: `ticket:${user.id}`,
-      parent: TICKET_OPEN_CATEGORY_ID,
+      parent: panelOpenCategoryId,
       permissionOverwrites: permOverwrites
     }) as TextChannel;
 
