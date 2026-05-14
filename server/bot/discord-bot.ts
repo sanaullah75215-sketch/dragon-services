@@ -20,6 +20,12 @@ const VOUCH_CHANNEL_ID = process.env.VOUCH_CHANNEL_ID || '1414374874809368656'; 
 // Withdrawal notification channel - where milestone notifications are sent
 const WITHDRAWAL_NOTIFICATION_CHANNEL_ID = process.env.WITHDRAWAL_NOTIFICATION_CHANNEL_ID || '1449760619292131398';
 
+// Ticket transcript channel - where closed ticket logs are posted
+const TICKET_TRANSCRIPT_CHANNEL_ID = process.env.TICKET_TRANSCRIPT_CHANNEL_ID || '';
+
+// Staff/admin role IDs used for ticket permissions
+const STAFF_ROLE_IDS = (process.env.STAFF_ROLE_IDS || '').split(',').filter(Boolean);
+
 /**
  * Notify worker when they reach balance milestones
  * Sends a message to the withdrawal notification channel when balance reaches 400M, 800M, 1.2B, etc.
@@ -231,8 +237,9 @@ export async function startDiscordBot() {
       
       // Register slash commands
       await registerSlashCommands(readyClient.user.id);
-      
 
+      // Start ticket deletion scheduler (checks every hour)
+      startTicketDeletionScheduler(readyClient);
     });
 
     // Handle interactions
@@ -302,6 +309,10 @@ export async function startDiscordBot() {
         await handleRspsSellCommand(message);
       } else if (message.content.startsWith('!send ')) {
         await handleSendCommand(message);
+      } else if (message.content === '!ticketpanel') {
+        await handleTicketPanelCommand(message);
+      } else if (message.content === '!close') {
+        await handleCloseTicketCommand(message);
       }
     });
 
@@ -2358,6 +2369,16 @@ async function handleButtonInteraction(interaction: any) {
     
     if (customId.startsWith('unclaim_order_')) {
       await handleOrderUnclaim(interaction);
+      return;
+    }
+
+    if (customId === 'open_ticket') {
+      await handleOpenTicket(interaction);
+      return;
+    }
+
+    if (customId.startsWith('close_ticket_')) {
+      await handleCloseTicketButton(interaction);
       return;
     }
     
@@ -6886,5 +6907,419 @@ function getOrderStatusEmoji(status: string): string {
   }
 }
 
+// ─────────────────────────────────────────────
+// TICKET SYSTEM
+// ─────────────────────────────────────────────
+
+async function handleTicketPanelCommand(message: any) {
+  try {
+    // Staff / admin only
+    const member = message.member;
+    const isStaff = member?.permissions?.has('Administrator') ||
+      member?.roles?.cache?.some((r: any) =>
+        ['staff', 'admin', 'moderator', 'mod'].includes(r.name.toLowerCase()) ||
+        STAFF_ROLE_IDS.includes(r.id)
+      );
+
+    if (!isStaff) {
+      await message.reply({ content: '❌ You need staff permissions to post the ticket panel.', ephemeral: true });
+      return;
+    }
+
+    await message.delete().catch(() => {});
+
+    const embed = new EmbedBuilder()
+      .setTitle('🎫 Dragon Services — Support Tickets')
+      .setDescription(
+        '**Need help or want to order a service?**\n\n' +
+        'Click the button below to open a private ticket channel.\n' +
+        'A staff member will assist you as soon as possible.\n\n' +
+        '📋 **Please include in your ticket:**\n' +
+        '• Service you are interested in\n' +
+        '• Your OSRS username\n' +
+        '• Any special requirements'
+      )
+      .setColor(0xFF6B35)
+      .setThumbnail('https://oldschool.runescape.wiki/images/thumb/4/4e/Dragon_full_helm.png/130px-Dragon_full_helm.png')
+      .setFooter({
+        text: '🐲 Dragon Services • One ticket per person',
+        iconURL: 'https://oldschool.runescape.wiki/images/thumb/4/4e/Dragon_full_helm.png/21px-Dragon_full_helm.png'
+      });
+
+    const openBtn = new ButtonBuilder()
+      .setCustomId('open_ticket')
+      .setLabel('🎫 Open a Ticket')
+      .setStyle(ButtonStyle.Success);
+
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(openBtn);
+
+    await message.channel.send({ embeds: [embed], components: [row] });
+  } catch (error) {
+    console.error('Error posting ticket panel:', error);
+    await message.reply('❌ Failed to post ticket panel.').catch(() => {});
+  }
+}
+
+async function handleOpenTicket(interaction: any) {
+  try {
+    await interaction.deferReply({ ephemeral: true });
+
+    const guild = interaction.guild;
+    const user = interaction.user;
+
+    // Check for existing open ticket for this user
+    const existingChannels = guild.channels.cache.filter((ch: any) =>
+      ch.name === `ticket-${user.username.toLowerCase().replace(/[^a-z0-9]/g, '')}` ||
+      ch.topic === `ticket:${user.id}`
+    );
+    if (existingChannels.size > 0) {
+      await interaction.editReply({
+        content: `❌ You already have an open ticket: <#${existingChannels.first().id}>`
+      });
+      return;
+    }
+
+    // Build permission overwrites — everyone denied, user + staff allowed
+    const permOverwrites: any[] = [
+      { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
+      {
+        id: user.id,
+        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory]
+      }
+    ];
+
+    // Add each staff role
+    for (const roleId of STAFF_ROLE_IDS) {
+      try {
+        const role = await guild.roles.fetch(roleId);
+        if (role) {
+          permOverwrites.push({
+            id: roleId,
+            allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.ManageMessages]
+          });
+        }
+      } catch {}
+    }
+
+    const channelName = `ticket-${user.username.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 20)}`;
+
+    const ticketChannel = await guild.channels.create({
+      name: channelName,
+      type: ChannelType.GuildText,
+      topic: `ticket:${user.id}`,
+      permissionOverwrites: permOverwrites
+    }) as TextChannel;
+
+    // Save to database
+    const closedAt = null;
+    const scheduledDeleteAt = null;
+    await storage.createTicket({
+      channelId: ticketChannel.id,
+      guildId: guild.id,
+      openedByUserId: user.id,
+      openedByUsername: user.username,
+      topic: null,
+      status: 'open',
+      closedByUserId: null,
+      closedByUsername: null,
+      closedAt,
+      scheduledDeleteAt,
+      channelDeleted: false
+    });
+
+    // Welcome embed inside the ticket channel
+    const welcomeEmbed = new EmbedBuilder()
+      .setTitle(`🎫 Ticket — ${user.username}`)
+      .setDescription(
+        `Hello <@${user.id}>! Welcome to your support ticket.\n\n` +
+        `A staff member will be with you shortly.\n\n` +
+        `📋 **Please describe:**\n` +
+        `• What service you need\n` +
+        `• Your OSRS username\n` +
+        `• Any other details\n\n` +
+        `When finished, click **🔒 Close Ticket** below.`
+      )
+      .setColor(0xFF6B35)
+      .setFooter({
+        text: '🐲 Dragon Services • Staff will assist you soon',
+        iconURL: 'https://oldschool.runescape.wiki/images/thumb/4/4e/Dragon_full_helm.png/21px-Dragon_full_helm.png'
+      })
+      .setTimestamp();
+
+    const closeBtn = new ButtonBuilder()
+      .setCustomId(`close_ticket_${ticketChannel.id}`)
+      .setLabel('🔒 Close Ticket')
+      .setStyle(ButtonStyle.Danger);
+
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(closeBtn);
+
+    await ticketChannel.send({
+      content: `<@${user.id}>`,
+      embeds: [welcomeEmbed],
+      components: [row]
+    });
+
+    await interaction.editReply({
+      content: `✅ Your ticket has been created: <#${ticketChannel.id}>`
+    });
+
+    console.log(`🎫 Ticket created: ${channelName} for ${user.username} (${user.id})`);
+  } catch (error) {
+    console.error('Error opening ticket:', error);
+    try {
+      await interaction.editReply({ content: '❌ Failed to create ticket. Please try again.' });
+    } catch {}
+  }
+}
+
+async function handleCloseTicketButton(interaction: any) {
+  try {
+    await interaction.deferReply({ ephemeral: false });
+    await closeTicket(interaction.channel, interaction.user, interaction.client);
+    // Delete the reply — the channel will show a closing message
+    await interaction.deleteReply().catch(() => {});
+  } catch (error) {
+    console.error('Error closing ticket via button:', error);
+    try {
+      await interaction.editReply({ content: '❌ Failed to close ticket.' });
+    } catch {}
+  }
+}
+
+async function handleCloseTicketCommand(message: any) {
+  try {
+    // Check that we're in a ticket channel
+    const ticket = await storage.getTicketByChannel(message.channel.id);
+    if (!ticket) {
+      await message.reply('❌ This command can only be used inside a ticket channel.');
+      return;
+    }
+    if (ticket.status === 'closed') {
+      await message.reply('⚠️ This ticket is already closed.');
+      return;
+    }
+
+    // Staff or ticket owner can close
+    const member = message.member;
+    const isStaff = member?.permissions?.has('Administrator') ||
+      member?.roles?.cache?.some((r: any) =>
+        ['staff', 'admin', 'moderator', 'mod'].includes(r.name.toLowerCase()) ||
+        STAFF_ROLE_IDS.includes(r.id)
+      );
+    const isOwner = message.author.id === ticket.openedByUserId;
+
+    if (!isStaff && !isOwner) {
+      await message.reply('❌ Only staff or the ticket owner can close this ticket.');
+      return;
+    }
+
+    await closeTicket(message.channel, message.author, message.client);
+  } catch (error) {
+    console.error('Error closing ticket via command:', error);
+    await message.reply('❌ Failed to close ticket.').catch(() => {});
+  }
+}
+
+async function closeTicket(channel: any, closedBy: any, botClient: any) {
+  try {
+    const ticket = await storage.getTicketByChannel(channel.id);
+    if (!ticket || ticket.status === 'closed') return;
+
+    const closedAt = new Date();
+    const scheduledDeleteAt = new Date(closedAt.getTime() + 3 * 24 * 60 * 60 * 1000); // +3 days
+
+    await storage.updateTicket(ticket.id, {
+      status: 'closed',
+      closedByUserId: closedBy.id,
+      closedByUsername: closedBy.username,
+      closedAt,
+      scheduledDeleteAt
+    });
+
+    // Generate transcript
+    const transcriptBuffer = await generateTranscript(channel, ticket);
+
+    // Post closing message in the ticket channel
+    const closingEmbed = new EmbedBuilder()
+      .setTitle('🔒 Ticket Closed')
+      .setDescription(
+        `This ticket has been closed by <@${closedBy.id}>.\n\n` +
+        `📄 A transcript has been saved and sent to the ticket opener.\n\n` +
+        `⏳ This channel will be **deleted in 3 days**.`
+      )
+      .addFields(
+        { name: '🎫 Opened by', value: `<@${ticket.openedByUserId}>`, inline: true },
+        { name: '🔒 Closed by', value: `<@${closedBy.id}>`, inline: true },
+        { name: '🗑️ Deletion', value: `<t:${Math.floor(scheduledDeleteAt.getTime() / 1000)}:R>`, inline: true }
+      )
+      .setColor(0xED4245)
+      .setFooter({ text: '🐲 Dragon Services' })
+      .setTimestamp();
+
+    await channel.send({ embeds: [closingEmbed] });
+
+    // Remove ticket opener's ability to send messages (read-only)
+    try {
+      await channel.permissionOverwrites.edit(ticket.openedByUserId, {
+        SendMessages: false
+      });
+    } catch {}
+
+    // DM the transcript to the ticket opener
+    try {
+      const opener = await botClient.users.fetch(ticket.openedByUserId);
+      const dmEmbed = new EmbedBuilder()
+        .setTitle('📄 Your Ticket Transcript — Dragon Services')
+        .setDescription(
+          `Your ticket **#${channel.name}** has been closed.\n\n` +
+          `📎 A full transcript is attached below.\n\n` +
+          `Thank you for choosing Dragon Services! 🐲`
+        )
+        .addFields(
+          { name: '🔒 Closed by', value: closedBy.username, inline: true },
+          { name: '📅 Closed at', value: `<t:${Math.floor(closedAt.getTime() / 1000)}:F>`, inline: true }
+        )
+        .setColor(0xFF6B35)
+        .setFooter({ text: '🐲 Dragon Services' })
+        .setTimestamp();
+
+      await opener.send({
+        embeds: [dmEmbed],
+        files: [{ attachment: transcriptBuffer, name: `transcript-${channel.name}.txt` }]
+      });
+    } catch (dmError) {
+      console.log(`Could not DM transcript to ${ticket.openedByUsername} (DMs may be closed)`);
+    }
+
+    // Post transcript to the transcript channel
+    if (TICKET_TRANSCRIPT_CHANNEL_ID) {
+      try {
+        const transcriptChannel = await botClient.channels.fetch(TICKET_TRANSCRIPT_CHANNEL_ID);
+        if (transcriptChannel && transcriptChannel.isTextBased()) {
+          const logEmbed = new EmbedBuilder()
+            .setTitle(`📄 Transcript — ${channel.name}`)
+            .addFields(
+              { name: '🎫 Opened by', value: `<@${ticket.openedByUserId}> (${ticket.openedByUsername})`, inline: true },
+              { name: '🔒 Closed by', value: `<@${closedBy.id}> (${closedBy.username})`, inline: true },
+              { name: '📅 Opened', value: `<t:${Math.floor(new Date(ticket.createdAt).getTime() / 1000)}:F>`, inline: false },
+              { name: '📅 Closed', value: `<t:${Math.floor(closedAt.getTime() / 1000)}:F>`, inline: false }
+            )
+            .setColor(0x5865F2)
+            .setFooter({ text: '🐲 Dragon Services • Ticket Logs' })
+            .setTimestamp();
+
+          await (transcriptChannel as TextChannel).send({
+            embeds: [logEmbed],
+            files: [{ attachment: transcriptBuffer, name: `transcript-${channel.name}.txt` }]
+          });
+        }
+      } catch (transcriptChannelError) {
+        console.error('Failed to post transcript to channel:', transcriptChannelError);
+      }
+    }
+
+    console.log(`🔒 Ticket closed: ${channel.name} — deletes at ${scheduledDeleteAt.toISOString()}`);
+  } catch (error) {
+    console.error('Error in closeTicket:', error);
+    throw error;
+  }
+}
+
+async function generateTranscript(channel: any, ticket: any): Promise<Buffer> {
+  const lines: string[] = [];
+
+  lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  lines.push('                 🐲 DRAGON SERVICES — TICKET TRANSCRIPT');
+  lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  lines.push(`Channel:    #${channel.name}`);
+  lines.push(`Opened by:  ${ticket.openedByUsername} (${ticket.openedByUserId})`);
+  lines.push(`Opened at:  ${new Date(ticket.createdAt).toUTCString()}`);
+  lines.push(`Closed at:  ${new Date().toUTCString()}`);
+  lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  lines.push('');
+
+  try {
+    // Fetch up to 500 messages (Discord max per fetch is 100; loop)
+    let allMessages: any[] = [];
+    let lastId: string | undefined;
+
+    for (let i = 0; i < 5; i++) {
+      const options: any = { limit: 100 };
+      if (lastId) options.before = lastId;
+
+      const batch = await channel.messages.fetch(options);
+      if (batch.size === 0) break;
+
+      allMessages = allMessages.concat(Array.from(batch.values()));
+      lastId = batch.last()?.id;
+      if (batch.size < 100) break;
+    }
+
+    // Sort oldest first
+    allMessages.sort((a: any, b: any) => a.createdTimestamp - b.createdTimestamp);
+
+    for (const msg of allMessages) {
+      const timestamp = new Date(msg.createdTimestamp).toUTCString();
+      const author = `${msg.author.username}${msg.author.bot ? ' [BOT]' : ''}`;
+      const content = msg.content || '[no text content]';
+
+      lines.push(`[${timestamp}] ${author}: ${content}`);
+
+      if (msg.embeds.length > 0) {
+        for (const embed of msg.embeds) {
+          if (embed.title) lines.push(`  [Embed Title] ${embed.title}`);
+          if (embed.description) lines.push(`  [Embed] ${embed.description.substring(0, 200)}`);
+        }
+      }
+
+      if (msg.attachments.size > 0) {
+        for (const att of msg.attachments.values()) {
+          lines.push(`  [Attachment] ${att.url}`);
+        }
+      }
+    }
+  } catch (fetchError) {
+    lines.push('[Could not fetch messages]');
+    console.error('Error fetching messages for transcript:', fetchError);
+  }
+
+  lines.push('');
+  lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  lines.push('                        END OF TRANSCRIPT');
+  lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+  return Buffer.from(lines.join('\n'), 'utf8');
+}
+
+function startTicketDeletionScheduler(botClient: any) {
+  const checkInterval = 60 * 60 * 1000; // every hour
+
+  const run = async () => {
+    try {
+      const due = await storage.getTicketsDueForDeletion();
+      for (const ticket of due) {
+        try {
+          const channel = await botClient.channels.fetch(ticket.channelId).catch(() => null);
+          if (channel) {
+            await channel.delete('Ticket auto-deleted after 3 days').catch(() => {});
+            console.log(`🗑️ Auto-deleted ticket channel ${ticket.channelId} (${ticket.openedByUsername})`);
+          }
+          await storage.updateTicket(ticket.id, { channelDeleted: true });
+        } catch (err) {
+          console.error(`Error deleting ticket channel ${ticket.channelId}:`, err);
+          // Mark as deleted even if channel is already gone
+          await storage.updateTicket(ticket.id, { channelDeleted: true }).catch(() => {});
+        }
+      }
+    } catch (err) {
+      console.error('Ticket deletion scheduler error:', err);
+    }
+  };
+
+  // Run once immediately, then every hour
+  run();
+  setInterval(run, checkInterval);
+  console.log('🎫 Ticket deletion scheduler started (checks every hour)');
+}
 
 export { client };
