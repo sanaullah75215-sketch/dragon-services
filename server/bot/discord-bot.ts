@@ -6977,13 +6977,27 @@ async function handleOpenTicket(interaction: any) {
     const guild = interaction.guild;
     const user = interaction.user;
 
-    // Check for existing open ticket for this user via DB (reliable across restarts)
+    // Check for existing open ticket for this user via DB
     const existingTicket = await storage.getOpenTicketByUser(user.id);
     if (existingTicket) {
-      await interaction.editReply({
-        content: `❌ You already have an open ticket: <#${existingTicket.channelId}>\nPlease use that channel or ask staff to close it first.`
-      });
-      return;
+      // Verify the Discord channel still actually exists — it may have been deleted manually
+      const channelStillExists = guild.channels.cache.has(existingTicket.channelId) ||
+        await guild.channels.fetch(existingTicket.channelId).catch(() => null);
+
+      if (channelStillExists) {
+        await interaction.editReply({
+          content: `❌ You already have an open ticket: <#${existingTicket.channelId}>\nPlease use that channel or ask staff to close it first.`
+        });
+        return;
+      } else {
+        // Channel was deleted manually — mark stale record as closed so they can open a new one
+        await storage.updateTicket(existingTicket.id, {
+          status: 'closed',
+          channelDeleted: true,
+          closedAt: new Date()
+        });
+        console.log(`🧹 Cleaned up stale open ticket ${existingTicket.id} (channel deleted manually)`);
+      }
     }
 
     // Build permission overwrites:
