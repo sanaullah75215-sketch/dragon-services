@@ -294,7 +294,7 @@ export function createCalculationResultEmbed(selectedServices: any[]) {
 
 // Skill calculator embed
 export function createSkillCalculatorEmbed(data: any) {
-  const { skill, startLevel, endLevel, expNeeded, methods } = data;
+  const { skill, startLevel, endLevel, expNeeded, methods, userRank, discountApplied } = data;
   
   const formatGP = (gp: number) => {
     if (gp >= 1000000000) {
@@ -309,10 +309,14 @@ export function createSkillCalculatorEmbed(data: any) {
   };
 
   const skillIcon = getSkillIcon(skill.name);
-  
+
+  // Determine discount info from first method that has it (all share same %)
+  const discountPercentage: number = methods[0]?.discountPercentage || 0;
+  const hasDiscount = discountApplied && discountPercentage > 0;
+
   const embed = new EmbedBuilder()
     .setTitle(`${skillIcon} ${skill.name.charAt(0).toUpperCase() + skill.name.slice(1)} — Levels ${startLevel} to ${endLevel}`)
-    .setColor(0xFF6B35);
+    .setColor(hasDiscount ? 0x57F287 : 0xFF6B35);
 
   // Group method breakdowns by method name
   const grouped: Map<string, any[]> = new Map();
@@ -323,23 +327,45 @@ export function createSkillCalculatorEmbed(data: any) {
   }
 
   let description = '';
+  if (hasDiscount && userRank) {
+    description += `🎁 **${userRank.name} rank — ${discountPercentage}% discount applied!**\n\n`;
+  }
+
+  let grandOriginal = 0;
   let grandTotal = 0;
+  let grandDiscount = 0;
   let groupIndex = 0;
 
   for (const [methodName, entries] of grouped) {
     const methodEmoji = getMethodEmoji(methodName);
     let methodTotal = 0;
+    let methodOriginal = 0;
+    let methodDiscount = 0;
 
     description += `**${methodEmoji} ${methodName}**\n`;
 
     for (const entry of entries) {
-      const { levelRange, totalCost, gpPerXp } = entry;
+      const { levelRange, totalCost, originalCost, discountAmount, gpPerXp } = entry;
       methodTotal += totalCost;
-      description += `\`[${levelRange}]\` • ${gpPerXp} gp/xp • 💰 ${formatGP(totalCost)} GP\n`;
+      methodOriginal += originalCost;
+      methodDiscount += discountAmount || 0;
+
+      if (hasDiscount && discountAmount > 0) {
+        description += `\`[${levelRange}]\` • ${gpPerXp} gp/xp • ~~${formatGP(originalCost)}~~ → **${formatGP(totalCost)} GP**\n`;
+      } else {
+        description += `\`[${levelRange}]\` • ${gpPerXp} gp/xp • 💰 ${formatGP(totalCost)} GP\n`;
+      }
     }
 
-    description += `> 💵 **Method Total: ${formatGP(methodTotal)} GP**\n`;
+    if (hasDiscount && methodDiscount > 0) {
+      description += `> 💵 **Method Total: ${formatGP(methodTotal)} GP** *(saved ${formatGP(methodDiscount)} GP)*\n`;
+    } else {
+      description += `> 💵 **Method Total: ${formatGP(methodTotal)} GP**\n`;
+    }
+
     grandTotal += methodTotal;
+    grandOriginal += methodOriginal;
+    grandDiscount += methodDiscount;
 
     groupIndex++;
     if (groupIndex < grouped.size) {
@@ -347,8 +373,18 @@ export function createSkillCalculatorEmbed(data: any) {
     }
   }
 
-  if (grouped.size > 1) {
-    description += `\n━━━━━━━━━━━━━━━━━━━━\n💰 **Grand Total: ${formatGP(grandTotal)} GP**`;
+  if (grouped.size > 1 || hasDiscount) {
+    description += `\n━━━━━━━━━━━━━━━━━━━━\n`;
+    if (hasDiscount && grandDiscount > 0) {
+      description += `~~${formatGP(grandOriginal)}~~ → 💰 **Grand Total: ${formatGP(grandTotal)} GP**\n`;
+      description += `🎁 You save **${formatGP(grandDiscount)} GP** (${discountPercentage}% off)`;
+    } else {
+      description += `💰 **Grand Total: ${formatGP(grandTotal)} GP**`;
+    }
+  }
+
+  if (!hasDiscount) {
+    description += `\n\n*💡 Spend more GP to unlock rank discounts (up to 8% off)*`;
   }
 
   embed.setDescription(description.trim());
