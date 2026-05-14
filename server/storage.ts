@@ -20,7 +20,9 @@ import {
   rsnRegistrations, insertRsnRegistrationSchema, type RsnRegistration, type InsertRsnRegistration,
   botSettings, type BotSetting,
   sytheVouches, insertSytheVouchSchema, type SytheVouch, type InsertSytheVouch,
-  tickets, insertTicketSchema, type Ticket, type InsertTicket
+  tickets, insertTicketSchema, type Ticket, type InsertTicket,
+  ticketPanels, insertTicketPanelSchema, type TicketPanel, type InsertTicketPanel,
+  ticketSettings, type TicketSetting
 } from '@shared/schema';
 
 // Storage interface definition
@@ -207,10 +209,22 @@ export interface IStorage {
   // Ticket operations
   getNextTicketNumber(): Promise<number>;
   getOpenTicketByUser(userId: string): Promise<Ticket | undefined>;
+  getAllTickets(): Promise<Ticket[]>;
+  getTicketById(id: string): Promise<Ticket | undefined>;
   createTicket(insertTicket: InsertTicket): Promise<Ticket>;
   getTicketByChannel(channelId: string): Promise<Ticket | undefined>;
   updateTicket(id: string, updates: Partial<Ticket>): Promise<Ticket | undefined>;
   getTicketsDueForDeletion(): Promise<Ticket[]>;
+  // Ticket panel operations
+  getTicketPanels(): Promise<TicketPanel[]>;
+  getTicketPanel(id: string): Promise<TicketPanel | undefined>;
+  createTicketPanel(panel: InsertTicketPanel): Promise<TicketPanel>;
+  updateTicketPanel(id: string, updates: Partial<TicketPanel>): Promise<TicketPanel | undefined>;
+  deleteTicketPanel(id: string): Promise<void>;
+  // Ticket settings
+  getTicketSettings(): Promise<TicketSetting[]>;
+  getTicketSetting(key: string): Promise<string | undefined>;
+  setTicketSetting(key: string, value: string): Promise<void>;
   
   // Helper methods
   generateOrderNumber(): Promise<string>;
@@ -2218,6 +2232,53 @@ export class DatabaseStorage implements IStorage {
       .from(tickets)
       .where(and(eq(tickets.openedByUserId, userId), eq(tickets.status, 'open')));
     return ticket || undefined;
+  }
+
+  async getAllTickets(): Promise<Ticket[]> {
+    return await db.select().from(tickets).orderBy(desc(tickets.createdAt));
+  }
+
+  async getTicketById(id: string): Promise<Ticket | undefined> {
+    const [ticket] = await db.select().from(tickets).where(eq(tickets.id, id));
+    return ticket || undefined;
+  }
+
+  async getTicketPanels(): Promise<TicketPanel[]> {
+    return await db.select().from(ticketPanels).orderBy(desc(ticketPanels.createdAt));
+  }
+
+  async getTicketPanel(id: string): Promise<TicketPanel | undefined> {
+    const [panel] = await db.select().from(ticketPanels).where(eq(ticketPanels.id, id));
+    return panel || undefined;
+  }
+
+  async createTicketPanel(panel: InsertTicketPanel): Promise<TicketPanel> {
+    const [created] = await db.insert(ticketPanels).values(panel).returning();
+    return created;
+  }
+
+  async updateTicketPanel(id: string, updates: Partial<TicketPanel>): Promise<TicketPanel | undefined> {
+    const [updated] = await db.update(ticketPanels).set(updates).where(eq(ticketPanels.id, id)).returning();
+    return updated || undefined;
+  }
+
+  async deleteTicketPanel(id: string): Promise<void> {
+    await db.delete(ticketPanels).where(eq(ticketPanels.id, id));
+  }
+
+  async getTicketSettings(): Promise<TicketSetting[]> {
+    return await db.select().from(ticketSettings);
+  }
+
+  async getTicketSetting(key: string): Promise<string | undefined> {
+    const [row] = await db.select().from(ticketSettings).where(eq(ticketSettings.key, key));
+    return row?.value;
+  }
+
+  async setTicketSetting(key: string, value: string): Promise<void> {
+    await db.insert(ticketSettings)
+      .values({ key, value, updatedAt: new Date() })
+      .onConflictDoUpdate({ target: ticketSettings.key, set: { value, updatedAt: new Date() } });
   }
 
   async createTicket(insertTicket: InsertTicket): Promise<Ticket> {
