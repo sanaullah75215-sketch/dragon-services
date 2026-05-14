@@ -23,6 +23,9 @@ const WITHDRAWAL_NOTIFICATION_CHANNEL_ID = process.env.WITHDRAWAL_NOTIFICATION_C
 // Ticket transcript channel - where closed ticket logs are posted
 const TICKET_TRANSCRIPT_CHANNEL_ID = process.env.TICKET_TRANSCRIPT_CHANNEL_ID || '';
 
+// Users who are ALWAYS added to every ticket (owner, head staff, bot)
+const TICKET_ALWAYS_NOTIFY_IDS = ['1391833761573765193', '1391833925671845899', '1391834089518268627'];
+
 /**
  * Notify worker when they reach balance milestones
  * Sends a message to the withdrawal notification channel when balance reaches 400M, 800M, 1.2B, etc.
@@ -310,6 +313,10 @@ export async function startDiscordBot() {
         await handleTicketPanelCommand(message);
       } else if (message.content === '!close') {
         await handleCloseTicketCommand(message);
+      } else if (message.content.startsWith('!add ')) {
+        await handleTicketAddCommand(message);
+      } else if (message.content.startsWith('!remove ')) {
+        await handleTicketRemoveCommand(message);
       }
     });
 
@@ -6964,41 +6971,52 @@ async function handleOpenTicket(interaction: any) {
     const guild = interaction.guild;
     const user = interaction.user;
 
-    // Check for existing open ticket for this user
-    const existingChannels = guild.channels.cache.filter((ch: any) =>
-      ch.name === `ticket-${user.username.toLowerCase().replace(/[^a-z0-9]/g, '')}` ||
+    // Check for existing open ticket for this user (DB check is more reliable than cache)
+    const allChannels = guild.channels.cache.filter((ch: any) =>
       ch.topic === `ticket:${user.id}`
     );
-    if (existingChannels.size > 0) {
+    if (allChannels.size > 0) {
       await interaction.editReply({
-        content: `❌ You already have an open ticket: <#${existingChannels.first().id}>`
+        content: `❌ You already have an open ticket: <#${allChannels.first().id}>\nPlease use that channel or ask staff to close it first.`
       });
       return;
     }
 
-    // Build permission overwrites — everyone denied, user + staff allowed
+    // Build permission overwrites:
+    // - @everyone: denied view
+    // - Ticket opener: view + send
+    // - Hardcoded staff/owner/bot user IDs: full access
+    const staffPerms = [
+      PermissionFlagsBits.ViewChannel,
+      PermissionFlagsBits.SendMessages,
+      PermissionFlagsBits.ReadMessageHistory,
+      PermissionFlagsBits.ManageMessages,
+      PermissionFlagsBits.AttachFiles,
+      PermissionFlagsBits.EmbedLinks
+    ];
+
     const permOverwrites: any[] = [
       { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
       {
         id: user.id,
-        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory]
+        allow: [
+          PermissionFlagsBits.ViewChannel,
+          PermissionFlagsBits.SendMessages,
+          PermissionFlagsBits.ReadMessageHistory,
+          PermissionFlagsBits.AttachFiles,
+          PermissionFlagsBits.EmbedLinks
+        ]
       }
     ];
 
-    // Add each staff role
-    for (const roleId of STAFF_ROLE_IDS) {
-      try {
-        const role = await guild.roles.fetch(roleId);
-        if (role) {
-          permOverwrites.push({
-            id: roleId,
-            allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.ManageMessages]
-          });
-        }
-      } catch {}
+    // Add the always-present staff/owner/bot user IDs
+    for (const uid of TICKET_ALWAYS_NOTIFY_IDS) {
+      if (uid !== user.id) {
+        permOverwrites.push({ id: uid, allow: staffPerms });
+      }
     }
 
-    const channelName = `ticket-${user.username.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 20)}`;
+    const channelName = `ticket-${user.username.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').substring(0, 22)}`;
 
     const ticketChannel = await guild.channels.create({
       name: channelName,
@@ -7008,8 +7026,6 @@ async function handleOpenTicket(interaction: any) {
     }) as TextChannel;
 
     // Save to database
-    const closedAt = null;
-    const scheduledDeleteAt = null;
     await storage.createTicket({
       channelId: ticketChannel.id,
       guildId: guild.id,
@@ -7019,26 +7035,31 @@ async function handleOpenTicket(interaction: any) {
       status: 'open',
       closedByUserId: null,
       closedByUsername: null,
-      closedAt,
-      scheduledDeleteAt,
+      closedAt: null,
+      scheduledDeleteAt: null,
       channelDeleted: false
     });
 
-    // Welcome embed inside the ticket channel
+    // Welcome embed
     const welcomeEmbed = new EmbedBuilder()
-      .setTitle(`🎫 Ticket — ${user.username}`)
+      .setTitle(`🎫 Support Ticket — ${user.username}`)
       .setDescription(
-        `Hello <@${user.id}>! Welcome to your support ticket.\n\n` +
-        `A staff member will be with you shortly.\n\n` +
-        `📋 **Please describe:**\n` +
+        `Hello <@${user.id}>! 👋 Welcome to Dragon Services support.\n\n` +
+        `**Our staff will shortly handle your query — please stay with us!** 🐲\n\n` +
+        `📋 **While you wait, please describe:**\n` +
         `• What service you need\n` +
         `• Your OSRS username\n` +
-        `• Any other details\n\n` +
-        `When finished, click **🔒 Close Ticket** below.`
+        `• Any special requirements or questions\n\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n` +
+        `🔧 **Staff commands in this channel:**\n` +
+        `\`!add @user\` — Add someone to this ticket\n` +
+        `\`!remove @user\` — Remove someone from this ticket\n` +
+        `\`!close\` — Close this ticket`
       )
       .setColor(0xFF6B35)
+      .setThumbnail('https://oldschool.runescape.wiki/images/thumb/4/4e/Dragon_full_helm.png/130px-Dragon_full_helm.png')
       .setFooter({
-        text: '🐲 Dragon Services • Staff will assist you soon',
+        text: '🐲 Dragon Services • We\'ll be right with you!',
         iconURL: 'https://oldschool.runescape.wiki/images/thumb/4/4e/Dragon_full_helm.png/21px-Dragon_full_helm.png'
       })
       .setTimestamp();
@@ -7050,22 +7071,129 @@ async function handleOpenTicket(interaction: any) {
 
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(closeBtn);
 
+    // Ping the opener + always-notify staff so they get notifications
+    const pingLine = [user.id, ...TICKET_ALWAYS_NOTIFY_IDS.filter(id => id !== user.id)]
+      .map(id => `<@${id}>`)
+      .join(' ');
+
     await ticketChannel.send({
-      content: `<@${user.id}>`,
+      content: pingLine,
       embeds: [welcomeEmbed],
       components: [row]
     });
 
     await interaction.editReply({
-      content: `✅ Your ticket has been created: <#${ticketChannel.id}>`
+      content: `✅ Your ticket has been created: <#${ticketChannel.id}>\nOur staff will be with you shortly!`
     });
 
     console.log(`🎫 Ticket created: ${channelName} for ${user.username} (${user.id})`);
   } catch (error) {
     console.error('Error opening ticket:', error);
     try {
-      await interaction.editReply({ content: '❌ Failed to create ticket. Please try again.' });
+      await interaction.editReply({ content: '❌ Failed to create ticket. Please try again or contact staff directly.' });
     } catch {}
+  }
+}
+
+async function handleTicketAddCommand(message: any) {
+  try {
+    const ticket = await storage.getTicketByChannel(message.channel.id);
+    if (!ticket) {
+      await message.reply('❌ This command can only be used inside a ticket channel.');
+      return;
+    }
+
+    const member = message.member;
+    const isStaff = member?.permissions?.has('Administrator') ||
+      member?.roles?.cache?.some((r: any) => ['staff', 'admin', 'moderator', 'mod'].includes(r.name.toLowerCase()));
+
+    if (!isStaff) {
+      await message.reply('❌ Only staff can add people to tickets.');
+      return;
+    }
+
+    const mentioned = message.mentions.users.first();
+    if (!mentioned) {
+      await message.reply('❌ Please mention a user to add. Example: `!add @username`');
+      return;
+    }
+
+    try {
+      await message.channel.permissionOverwrites.create(mentioned.id, {
+        ViewChannel: true,
+        SendMessages: true,
+        ReadMessageHistory: true,
+        AttachFiles: true,
+        EmbedLinks: true
+      });
+
+      await message.reply({
+        embeds: [
+          new EmbedBuilder()
+            .setDescription(`✅ <@${mentioned.id}> has been **added** to this ticket.`)
+            .setColor(0x57F287)
+        ]
+      });
+    } catch (permErr) {
+      console.error('Error adding user to ticket:', permErr);
+      await message.reply('❌ Failed to add user. Make sure the bot has Manage Channel permissions.');
+    }
+  } catch (error) {
+    console.error('Error in !add command:', error);
+    await message.reply('❌ An error occurred.').catch(() => {});
+  }
+}
+
+async function handleTicketRemoveCommand(message: any) {
+  try {
+    const ticket = await storage.getTicketByChannel(message.channel.id);
+    if (!ticket) {
+      await message.reply('❌ This command can only be used inside a ticket channel.');
+      return;
+    }
+
+    const member = message.member;
+    const isStaff = member?.permissions?.has('Administrator') ||
+      member?.roles?.cache?.some((r: any) => ['staff', 'admin', 'moderator', 'mod'].includes(r.name.toLowerCase()));
+
+    if (!isStaff) {
+      await message.reply('❌ Only staff can remove people from tickets.');
+      return;
+    }
+
+    const mentioned = message.mentions.users.first();
+    if (!mentioned) {
+      await message.reply('❌ Please mention a user to remove. Example: `!remove @username`');
+      return;
+    }
+
+    // Don't allow removing the ticket opener or always-notify staff
+    if (mentioned.id === ticket.openedByUserId) {
+      await message.reply('❌ You cannot remove the ticket opener from their own ticket.');
+      return;
+    }
+    if (TICKET_ALWAYS_NOTIFY_IDS.includes(mentioned.id)) {
+      await message.reply('❌ You cannot remove core staff from tickets.');
+      return;
+    }
+
+    try {
+      await message.channel.permissionOverwrites.delete(mentioned.id);
+
+      await message.reply({
+        embeds: [
+          new EmbedBuilder()
+            .setDescription(`✅ <@${mentioned.id}> has been **removed** from this ticket.`)
+            .setColor(0xED4245)
+        ]
+      });
+    } catch (permErr) {
+      console.error('Error removing user from ticket:', permErr);
+      await message.reply('❌ Failed to remove user. Make sure the bot has Manage Channel permissions.');
+    }
+  } catch (error) {
+    console.error('Error in !remove command:', error);
+    await message.reply('❌ An error occurred.').catch(() => {});
   }
 }
 
