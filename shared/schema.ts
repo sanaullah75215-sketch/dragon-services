@@ -513,6 +513,7 @@ export type InsertSytheVouch = z.infer<typeof insertSytheVouchSchema>;
 // Tickets table - tracks support/service tickets created via the bot
 export const tickets = pgTable("tickets", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  ticketNumber: integer("ticket_number"),          // sequential: 1, 2, 3...
   channelId: text("channel_id").notNull().unique(),
   guildId: text("guild_id").notNull(),
   openedByUserId: text("opened_by_user_id").notNull(),
