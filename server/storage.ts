@@ -19,7 +19,8 @@ import {
   gpRates, insertGpRateSchema, type GpRate, type InsertGpRate,
   rsnRegistrations, insertRsnRegistrationSchema, type RsnRegistration, type InsertRsnRegistration,
   botSettings, type BotSetting,
-  sytheVouches, insertSytheVouchSchema, type SytheVouch, type InsertSytheVouch
+  sytheVouches, insertSytheVouchSchema, type SytheVouch, type InsertSytheVouch,
+  tickets, insertTicketSchema, type Ticket, type InsertTicket
 } from '@shared/schema';
 
 // Storage interface definition
@@ -202,6 +203,12 @@ export interface IStorage {
   getAllSytheVouches(): Promise<SytheVouch[]>;
   createSytheVouch(insertVouch: InsertSytheVouch): Promise<SytheVouch>;
   markSytheVouchPosted(id: string, discordMessageId: string): Promise<SytheVouch | undefined>;
+
+  // Ticket operations
+  createTicket(insertTicket: InsertTicket): Promise<Ticket>;
+  getTicketByChannel(channelId: string): Promise<Ticket | undefined>;
+  updateTicket(id: string, updates: Partial<Ticket>): Promise<Ticket | undefined>;
+  getTicketsDueForDeletion(): Promise<Ticket[]>;
   
   // Helper methods
   generateOrderNumber(): Promise<string>;
@@ -2193,6 +2200,46 @@ export class DatabaseStorage implements IStorage {
       .where(eq(sytheVouches.id, id))
       .returning();
     return vouch || undefined;
+  }
+
+  // Ticket operations
+  async createTicket(insertTicket: InsertTicket): Promise<Ticket> {
+    const [ticket] = await db
+      .insert(tickets)
+      .values(insertTicket)
+      .returning();
+    return ticket;
+  }
+
+  async getTicketByChannel(channelId: string): Promise<Ticket | undefined> {
+    const [ticket] = await db
+      .select()
+      .from(tickets)
+      .where(eq(tickets.channelId, channelId));
+    return ticket || undefined;
+  }
+
+  async updateTicket(id: string, updates: Partial<Ticket>): Promise<Ticket | undefined> {
+    const [ticket] = await db
+      .update(tickets)
+      .set(updates)
+      .where(eq(tickets.id, id))
+      .returning();
+    return ticket || undefined;
+  }
+
+  async getTicketsDueForDeletion(): Promise<Ticket[]> {
+    const now = new Date();
+    return await db
+      .select()
+      .from(tickets)
+      .where(
+        and(
+          eq(tickets.status, 'closed'),
+          eq(tickets.channelDeleted, false),
+          sql`${tickets.scheduledDeleteAt} <= ${now}`
+        )
+      );
   }
 }
 
