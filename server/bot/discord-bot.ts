@@ -21,7 +21,7 @@ const VOUCH_CHANNEL_ID = process.env.VOUCH_CHANNEL_ID || '1414374874809368656'; 
 const WITHDRAWAL_NOTIFICATION_CHANNEL_ID = process.env.WITHDRAWAL_NOTIFICATION_CHANNEL_ID || '1449760619292131398';
 
 // Ticket transcript channel - where closed ticket logs are posted
-const TICKET_TRANSCRIPT_CHANNEL_ID = process.env.TICKET_TRANSCRIPT_CHANNEL_ID || '';
+const TICKET_TRANSCRIPT_CHANNEL_ID = process.env.TICKET_TRANSCRIPT_CHANNEL_ID || '1417421991299907697';
 
 // Role IDs that are ALWAYS added to every ticket and pinged on open (owner, staff, bot roles)
 const TICKET_STAFF_ROLE_IDS = ['1391833761573765193', '1391833925671845899', '1391834089518268627'];
@@ -7398,7 +7398,7 @@ async function closeTicket(channel: any, closedBy: any, botClient: any) {
 
       await opener.send({
         embeds: [dmEmbed],
-        files: [{ attachment: transcriptBuffer, name: `transcript-${channel.name}.txt` }]
+        files: [{ attachment: transcriptBuffer, name: `transcript-${channel.name}.html` }]
       });
     } catch (dmError) {
       console.log(`Could not DM transcript to ${ticket.openedByUsername} (DMs may be closed)`);
@@ -7424,7 +7424,7 @@ async function closeTicket(channel: any, closedBy: any, botClient: any) {
 
           await transcriptChannel.send({
             embeds: [logEmbed],
-            files: [{ attachment: transcriptBuffer2, name: `transcript-${channel.name}.txt` }]
+            files: [{ attachment: transcriptBuffer2, name: `transcript-${channel.name}.html` }]
           });
           console.log(`📄 Transcript posted to channel ${transcriptChannelId}`);
         } else {
