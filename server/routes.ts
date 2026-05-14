@@ -1598,12 +1598,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put("/api/ticket-panels/:id", async (req, res) => {
     try {
-      const panel = await storage.updateTicketPanel(req.params.id, req.body);
+      // Strip read-only fields Drizzle cannot set
+      const { id: _id, createdAt: _ca, ...updates } = req.body;
+      const panel = await storage.updateTicketPanel(req.params.id, updates);
       if (!panel) return res.status(404).json({ message: "Panel not found" });
       res.json(panel);
       // Fire-and-forget: re-post updated panel embed to Discord channel
       postPanelToDiscord(panel).catch(e => console.error('Failed to post panel to Discord:', e));
-    } catch (e) { res.status(400).json({ message: "Failed to update panel" }); }
+    } catch (e: any) {
+      console.error('Failed to update panel:', e?.message ?? e);
+      res.status(400).json({ message: "Failed to update panel" });
+    }
   });
 
   app.delete("/api/ticket-panels/:id", async (req, res) => {
@@ -1814,12 +1819,12 @@ async function postPanelToDiscord(panel: any): Promise<void> {
   const btnStyle = styleMap[panel.buttonColor] ?? ButtonStyle.Primary;
   const btnLabel = `${panel.buttonEmoji ?? '🎫'} ${panel.buttonLabel ?? 'Open Ticket'}`;
 
+  const descriptionText = (panel.description ?? '').trim() ||
+    'Click the button below to open a private support ticket.\nA staff member will assist you shortly.';
+
   const embed = new EmbedBuilder()
     .setTitle(`🎫 ${panel.name}`)
-    .setDescription(
-      panel.description ||
-      'Click the button below to open a private support ticket.\nA staff member will assist you shortly.'
-    )
+    .setDescription(descriptionText)
     .setColor(0xFF6B35)
     .setThumbnail('https://oldschool.runescape.wiki/images/thumb/4/4e/Dragon_full_helm.png/130px-Dragon_full_helm.png')
     .setFooter({
@@ -1836,14 +1841,15 @@ async function postPanelToDiscord(panel: any): Promise<void> {
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(btn);
 
   // Ping configured roles if any
-  const rolePings = (panel.pingRoleIds ?? [])
-    .map((id: string) => `<@&${id}>`)
-    .join(' ');
+  const pingIds: string[] = (panel.pingRoleIds ?? []).filter(Boolean);
+  const rolePings = pingIds.map((id: string) => `<@&${id}>`).join(' ');
 
   await channel.send({
     content: rolePings || undefined,
     embeds: [embed],
     components: [row],
+    // allowedMentions needed so Discord actually notifies the roles
+    allowedMentions: pingIds.length ? { roles: pingIds } : { parse: [] },
   });
 
   console.log(`📋 Panel "${panel.name}" posted to channel ${panel.channelId}`);
