@@ -1562,6 +1562,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ─── Tickets API ─────────────────────────────────────────────────────────────
+  app.get("/api/tickets", async (req, res) => {
+    try { res.json(await storage.getAllTickets()); }
+    catch (e) { res.status(500).json({ message: "Failed to fetch tickets" }); }
+  });
+
+  app.get("/api/tickets/:id", async (req, res) => {
+    try {
+      const ticket = await storage.getTicketById(req.params.id);
+      if (!ticket) return res.status(404).json({ message: "Ticket not found" });
+      res.json(ticket);
+    } catch (e) { res.status(500).json({ message: "Failed to fetch ticket" }); }
+  });
+
+  app.delete("/api/tickets/:id", async (req, res) => {
+    try { await storage.updateTicket(req.params.id, { channelDeleted: true }); res.json({ success: true }); }
+    catch (e) { res.status(500).json({ message: "Failed to delete ticket" }); }
+  });
+
+  // ─── Ticket Panels API ────────────────────────────────────────────────────
+  app.get("/api/ticket-panels", async (req, res) => {
+    try { res.json(await storage.getTicketPanels()); }
+    catch (e) { res.status(500).json({ message: "Failed to fetch panels" }); }
+  });
+
+  app.post("/api/ticket-panels", async (req, res) => {
+    try { res.status(201).json(await storage.createTicketPanel(req.body)); }
+    catch (e) { res.status(400).json({ message: "Failed to create panel" }); }
+  });
+
+  app.put("/api/ticket-panels/:id", async (req, res) => {
+    try {
+      const panel = await storage.updateTicketPanel(req.params.id, req.body);
+      if (!panel) return res.status(404).json({ message: "Panel not found" });
+      res.json(panel);
+    } catch (e) { res.status(400).json({ message: "Failed to update panel" }); }
+  });
+
+  app.delete("/api/ticket-panels/:id", async (req, res) => {
+    try { await storage.deleteTicketPanel(req.params.id); res.json({ success: true }); }
+    catch (e) { res.status(500).json({ message: "Failed to delete panel" }); }
+  });
+
+  // ─── Ticket Settings API ──────────────────────────────────────────────────
+  app.get("/api/ticket-settings", async (req, res) => {
+    try {
+      const rows = await storage.getTicketSettings();
+      const out: Record<string, string> = {};
+      for (const r of rows) out[r.key] = r.value;
+      res.json(out);
+    } catch (e) { res.status(500).json({ message: "Failed to fetch settings" }); }
+  });
+
+  app.put("/api/ticket-settings", async (req, res) => {
+    try {
+      for (const [k, v] of Object.entries(req.body as Record<string, string>))
+        await storage.setTicketSetting(k, String(v));
+      res.json({ success: true });
+    } catch (e) { res.status(500).json({ message: "Failed to save settings" }); }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
