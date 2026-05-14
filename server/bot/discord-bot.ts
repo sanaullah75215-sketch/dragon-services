@@ -321,6 +321,8 @@ export async function startDiscordBot() {
         await handleTicketAddCommand(message);
       } else if (message.content.startsWith('!kick ')) {
         await handleTicketKickCommand(message);
+      } else if (message.content.startsWith('!rename ')) {
+        await handleTicketRenameCommand(message);
       }
     });
 
@@ -6975,13 +6977,11 @@ async function handleOpenTicket(interaction: any) {
     const guild = interaction.guild;
     const user = interaction.user;
 
-    // Check for existing open ticket for this user (DB check is more reliable than cache)
-    const allChannels = guild.channels.cache.filter((ch: any) =>
-      ch.topic === `ticket:${user.id}`
-    );
-    if (allChannels.size > 0) {
+    // Check for existing open ticket for this user via DB (reliable across restarts)
+    const existingTicket = await storage.getOpenTicketByUser(user.id);
+    if (existingTicket) {
       await interaction.editReply({
-        content: `❌ You already have an open ticket: <#${allChannels.first().id}>\nPlease use that channel or ask staff to close it first.`
+        content: `❌ You already have an open ticket: <#${existingTicket.channelId}>\nPlease use that channel or ask staff to close it first.`
       });
       return;
     }
@@ -7018,7 +7018,10 @@ async function handleOpenTicket(interaction: any) {
       permOverwrites.push({ id: roleId, allow: staffPerms });
     }
 
-    const channelName = `ticket-${user.username.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').substring(0, 22)}`;
+    // Get next sequential ticket number (e.g. 1 → "ticket-001")
+    const ticketNum = await storage.getNextTicketNumber();
+    const ticketNumStr = String(ticketNum).padStart(3, '0');
+    const channelName = `ticket-${ticketNumStr}`;
 
     const ticketChannel = await guild.channels.create({
       name: channelName,
@@ -7030,6 +7033,7 @@ async function handleOpenTicket(interaction: any) {
 
     // Save to database
     await storage.createTicket({
+      ticketNumber: ticketNum,
       channelId: ticketChannel.id,
       guildId: guild.id,
       openedByUserId: user.id,
@@ -7057,6 +7061,7 @@ async function handleOpenTicket(interaction: any) {
         `🔧 **Staff commands in this channel:**\n` +
         `\`!add @user\` — Add someone to this ticket\n` +
         `\`!kick @user\` — Remove someone from this ticket\n` +
+        `\`!rename new-name\` — Rename this ticket channel\n` +
         `\`!close\` — Close this ticket`
       )
       .setColor(0xFF6B35)
@@ -7197,6 +7202,47 @@ async function handleTicketKickCommand(message: any) {
   }
 }
 
+async function handleTicketRenameCommand(message: any) {
+  try {
+    const ticket = await storage.getTicketByChannel(message.channel.id);
+    if (!ticket) {
+      await message.reply('❌ This command can only be used inside a ticket channel.');
+      return;
+    }
+
+    const member = message.member;
+    const isStaff = member?.permissions?.has('Administrator') ||
+      member?.roles?.cache?.some((r: any) => ['staff', 'admin', 'moderator', 'mod'].includes(r.name.toLowerCase()));
+
+    if (!isStaff) {
+      await message.reply('❌ Only staff can rename tickets.');
+      return;
+    }
+
+    const newName = message.content.slice('!rename '.length).trim()
+      .toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').substring(0, 90);
+
+    if (!newName) {
+      await message.reply('❌ Please provide a name. Example: `!rename order-cooking`');
+      return;
+    }
+
+    const oldName = message.channel.name;
+    await message.channel.setName(newName);
+
+    await message.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setDescription(`✅ Ticket renamed from **${oldName}** → **${newName}**`)
+          .setColor(0x5865F2)
+      ]
+    });
+  } catch (error) {
+    console.error('Error in !rename command:', error);
+    await message.reply('❌ Failed to rename ticket. Make sure the bot has Manage Channel permissions.').catch(() => {});
+  }
+}
+
 async function handleCloseTicketButton(interaction: any) {
   try {
     await interaction.deferReply({ ephemeral: false });
@@ -7253,6 +7299,19 @@ async function closeTicket(channel: any, closedBy: any, botClient: any) {
     const closedAt = new Date();
     const scheduledDeleteAt = new Date(closedAt.getTime() + 3 * 24 * 60 * 60 * 1000); // +3 days
 
+    // Generate BOTH transcript buffers FIRST — before any permission/category changes
+    // (fetching messages after permissions change can fail)
+    let transcriptBuffer: Buffer;
+    let transcriptBuffer2: Buffer;
+    try {
+      transcriptBuffer  = await generateTranscript(channel, ticket);
+      transcriptBuffer2 = await generateTranscript(channel, ticket);
+    } catch (tErr) {
+      console.error('Failed to generate transcript:', tErr);
+      transcriptBuffer  = Buffer.from('Transcript unavailable.\n');
+      transcriptBuffer2 = Buffer.from('Transcript unavailable.\n');
+    }
+
     await storage.updateTicket(ticket.id, {
       status: 'closed',
       closedByUserId: closedBy.id,
@@ -7260,9 +7319,6 @@ async function closeTicket(channel: any, closedBy: any, botClient: any) {
       closedAt,
       scheduledDeleteAt
     });
-
-    // Generate transcript
-    const transcriptBuffer = await generateTranscript(channel, ticket);
 
     // Post closing message in the ticket channel
     const closingEmbed = new EmbedBuilder()
@@ -7349,8 +7405,6 @@ async function closeTicket(channel: any, closedBy: any, botClient: any) {
             .setFooter({ text: '🐲 Dragon Services • Ticket Logs' })
             .setTimestamp();
 
-          // Generate a fresh buffer for the channel post (the DM send may have consumed the stream)
-          const transcriptBuffer2 = await generateTranscript(channel, ticket);
           await transcriptChannel.send({
             embeds: [logEmbed],
             files: [{ attachment: transcriptBuffer2, name: `transcript-${channel.name}.txt` }]
