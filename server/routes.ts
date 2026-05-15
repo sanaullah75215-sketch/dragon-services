@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { startDiscordBot, getBotStatus, client } from "./bot/discord-bot";
 import { insertServiceSchema, insertUserInteractionSchema, insertSpecialOfferSchema, insertUserWalletSchema, insertWalletTransactionSchema, insertPaymentMethodSchema, insertGpRateSchema } from "@shared/schema";
+import { getTrackerStatus, runPriceCheck, calculateRates } from './bot/gp-price-tracker';
 import ExcelJS from 'exceljs';
 import { EmbedBuilder, TextChannel, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 
@@ -457,6 +458,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Error deleting GP rate:', error);
       res.status(500).json({ message: 'Failed to delete GP rate' });
+    }
+  });
+
+  // ── GP Price Tracker API ───────────────────────────────────────────────────
+
+  // GET /api/gp-tracker/status — last known market price, rates, config
+  app.get("/api/gp-tracker/status", async (req, res) => {
+    try {
+      const mem = getTrackerStatus();
+      const lastPrice   = await storage.getTicketSetting('gp_tracker_last_price');
+      const lastUpdated = await storage.getTicketSetting('gp_tracker_last_updated');
+      const sellRate    = await storage.getTicketSetting('gp_tracker_sell_rate');
+      const buyRate     = await storage.getTicketSetting('gp_tracker_buy_rate');
+      const source      = await storage.getTicketSetting('gp_tracker_source');
+      const channelId   = await storage.getTicketSetting('gp_tracker_channel');
+
+      res.json({
+        isRunning:       mem.isRunning,
+        lastMarketPrice: lastPrice   ? parseFloat(lastPrice)   : null,
+        lastSellRate:    sellRate    ? parseFloat(sellRate)     : null,
+        lastBuyRate:     buyRate     ? parseFloat(buyRate)      : null,
+        lastUpdated:     lastUpdated || null,
+        source:          source      || null,
+        channelId:       channelId   || null,
+      });
+    } catch (err) {
+      console.error('GP tracker status error:', err);
+      res.status(500).json({ message: 'Failed to get tracker status' });
+    }
+  });
+
+  // POST /api/gp-tracker/check — force an immediate price check + DB update
+  // Works even without the bot running; Discord notification is skipped if bot is offline
+  app.post("/api/gp-tracker/check", async (req, res) => {
+    try {
+      const botClient = client && client.isReady?.() ? client : undefined;
+      const msg = await runPriceCheck(botClient, true);
+      res.json({ message: msg });
+    } catch (err: any) {
+      console.error('GP tracker check error:', err);
+      res.status(500).json({ message: err.message || 'Check failed' });
+    }
+  });
+
+  // PUT /api/gp-tracker/config — update notify channel
+  app.put("/api/gp-tracker/config", async (req, res) => {
+    try {
+      const { channelId } = req.body as { channelId?: string };
+      if (channelId !== undefined) {
+        if (channelId) {
+          await storage.setTicketSetting('gp_tracker_channel', channelId);
+        } else {
+          await storage.setTicketSetting('gp_tracker_channel', '');
+        }
+      }
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error('GP tracker config error:', err);
+      res.status(500).json({ message: err.message || 'Config update failed' });
     }
   });
 
