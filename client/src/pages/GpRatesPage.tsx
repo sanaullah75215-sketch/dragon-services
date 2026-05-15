@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Plus, Edit, Trash2, DollarSign } from "lucide-react";
+import { Plus, Edit, Trash2, DollarSign, RefreshCw, TrendingUp, TrendingDown, Wifi, WifiOff } from "lucide-react";
 import { useState } from "react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -31,10 +31,21 @@ type GpRate = {
   lastUpdated: string;
 };
 
+type TrackerStatus = {
+  isRunning: boolean;
+  lastMarketPrice: number | null;
+  lastSellRate: number | null;
+  lastBuyRate: number | null;
+  lastUpdated: string | null;
+  source: string | null;
+  channelId: string | null;
+};
+
 export default function GpRatesPage() {
   const { toast } = useToast();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingRate, setEditingRate] = useState<GpRate | null>(null);
+  const [channelInput, setChannelInput] = useState("");
   const [formData, setFormData] = useState({
     methodName: "",
     methodType: "crypto",
@@ -48,6 +59,33 @@ export default function GpRatesPage() {
 
   const { data: gpRates = [], isLoading } = useQuery<GpRate[]>({
     queryKey: ["/api/gp-rates"],
+  });
+
+  const { data: trackerStatus, isLoading: trackerLoading } = useQuery<TrackerStatus>({
+    queryKey: ["/api/gp-tracker/status"],
+    refetchInterval: 60_000,
+  });
+
+  const forceCheckMutation = useMutation({
+    mutationFn: async () => apiRequest("POST", "/api/gp-tracker/check"),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/gp-tracker/status"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/gp-rates"] });
+      toast({ title: "✅ Price check complete", description: "Rates have been refreshed from the market." });
+    },
+    onError: (err: any) => {
+      toast({ title: "Price check failed", description: err.message || "Bot may not be running.", variant: "destructive" });
+    },
+  });
+
+  const saveChannelMutation = useMutation({
+    mutationFn: async (channelId: string) => apiRequest("PUT", "/api/gp-tracker/config", { channelId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/gp-tracker/status"] });
+      toast({ title: "✅ Notify channel saved" });
+      setChannelInput("");
+    },
+    onError: () => toast({ title: "Failed to save channel", variant: "destructive" }),
   });
 
   const createMutation = useMutation({
@@ -195,6 +233,90 @@ export default function GpRatesPage() {
             Add New Rate
           </Button>
         </div>
+
+        {/* ── Auto GP Price Tracker Status ─────────────────────────────── */}
+        <Card className="bg-slate-800/60 border-slate-600 mb-6">
+          <CardHeader className="p-4 pb-2">
+            <CardTitle className="text-white flex items-center gap-2 text-base sm:text-lg">
+              <TrendingUp className="w-5 h-5 text-green-400" />
+              Auto GP Price Tracker
+              {trackerStatus?.isRunning
+                ? <span className="ml-2 text-xs text-green-400 flex items-center gap-1"><Wifi className="w-3 h-3" /> Active</span>
+                : <span className="ml-2 text-xs text-slate-400 flex items-center gap-1"><WifiOff className="w-3 h-3" /> Bot offline</span>}
+            </CardTitle>
+            <CardDescription className="text-slate-400 text-xs">
+              Scrapes Probemas every 30 min · sets sell rate = market&nbsp;−&nbsp;$0.01 · buy rate = sell&nbsp;−&nbsp;$0.04 (capped $0.16–$0.18)
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-4 pt-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+              <div className="bg-slate-700/40 rounded-lg p-3 text-center">
+                <div className="text-slate-400 text-xs mb-1">Market Price</div>
+                <div className="text-white font-bold text-lg">
+                  {trackerLoading ? "…" : trackerStatus?.lastMarketPrice ? `$${trackerStatus.lastMarketPrice.toFixed(4)}` : "N/A"}
+                </div>
+                <div className="text-slate-500 text-xs">{trackerStatus?.source || "—"}</div>
+              </div>
+              <div className="bg-slate-700/40 rounded-lg p-3 text-center">
+                <div className="text-slate-400 text-xs mb-1 flex items-center justify-center gap-1"><TrendingUp className="w-3 h-3 text-green-400" /> Our Sell</div>
+                <div className="text-green-400 font-bold text-lg">
+                  {trackerLoading ? "…" : trackerStatus?.lastSellRate ? `$${trackerStatus.lastSellRate.toFixed(4)}` : "N/A"}
+                </div>
+                <div className="text-slate-500 text-xs">/ M GP</div>
+              </div>
+              <div className="bg-slate-700/40 rounded-lg p-3 text-center">
+                <div className="text-slate-400 text-xs mb-1 flex items-center justify-center gap-1"><TrendingDown className="w-3 h-3 text-red-400" /> Our Buy</div>
+                <div className="text-red-400 font-bold text-lg">
+                  {trackerLoading ? "…" : trackerStatus?.lastBuyRate ? `$${trackerStatus.lastBuyRate.toFixed(4)}` : "N/A"}
+                </div>
+                <div className="text-slate-500 text-xs">/ M GP</div>
+              </div>
+              <div className="bg-slate-700/40 rounded-lg p-3 text-center">
+                <div className="text-slate-400 text-xs mb-1">Last Updated</div>
+                <div className="text-white font-bold text-sm">
+                  {trackerStatus?.lastUpdated
+                    ? new Date(trackerStatus.lastUpdated).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                    : "Never"}
+                </div>
+                <div className="text-slate-500 text-xs">
+                  {trackerStatus?.lastUpdated
+                    ? new Date(trackerStatus.lastUpdated).toLocaleDateString()
+                    : "—"}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-3">
+              <Button
+                onClick={() => forceCheckMutation.mutate()}
+                disabled={forceCheckMutation.isPending}
+                size="sm"
+                className="bg-green-600 hover:bg-green-700 text-white"
+              >
+                <RefreshCw className={`w-4 h-4 mr-2 ${forceCheckMutation.isPending ? "animate-spin" : ""}`} />
+                {forceCheckMutation.isPending ? "Checking…" : "Force Price Check Now"}
+              </Button>
+
+              <div className="flex gap-2 flex-1">
+                <Input
+                  placeholder={trackerStatus?.channelId ? `Current: ${trackerStatus.channelId}` : "Discord channel ID for notifications"}
+                  value={channelInput}
+                  onChange={e => setChannelInput(e.target.value)}
+                  className="bg-slate-700 border-slate-600 text-white placeholder-slate-500 text-sm h-9"
+                />
+                <Button
+                  onClick={() => saveChannelMutation.mutate(channelInput)}
+                  disabled={!channelInput || saveChannelMutation.isPending}
+                  size="sm"
+                  variant="outline"
+                  className="border-slate-600 text-slate-300 hover:bg-slate-700 shrink-0"
+                >
+                  Set Channel
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         {isLoading ? (
           <div className="text-white text-center py-12">Loading GP rates...</div>
