@@ -58,10 +58,12 @@ if [ "$TABLE_EXISTS" = "t" ]; then
     );
   " 2>&1 | grep -v "^$" || true
 
-  # Patch: add ticket_number and transcript_html columns to existing tickets table
+  # Patch: add ticket_number, transcript_html, and category columns to existing tickets table
   psql "$DATABASE_URL" -c "
     ALTER TABLE tickets ADD COLUMN IF NOT EXISTS ticket_number integer;
     ALTER TABLE tickets ADD COLUMN IF NOT EXISTS transcript_html text;
+    ALTER TABLE tickets ADD COLUMN IF NOT EXISTS open_category_id text;
+    ALTER TABLE tickets ADD COLUMN IF NOT EXISTS closed_category_id text;
   " 2>&1 | grep -v "^$" || true
 
   # Patch: create ticket_panels table if missing
