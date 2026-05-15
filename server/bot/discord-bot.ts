@@ -4,6 +4,7 @@ import { storage } from '../storage';
 import { getCustomerRank, applyCustomerDiscount, getCustomerDiscount, formatGPAmount, getRankProgress, CUSTOMER_RANKS } from "@shared/ranks";
 import { createServicesEmbed, createServicesSelectMenu, createServiceOptionsEmbed, createServiceOptionsSelectMenu, createCalculatorEmbed, createCalculatorComponents, createServiceSelectionEmbed, createServiceSelectionComponents, createCalculationResultEmbed, createSkillCalculatorEmbed, createQuestCalculatorEmbed, createMultiQuestCalculatorEmbed } from './embeds';
 import { createSpecialOffersEmbed, createSingleOfferEmbed, createOffersSelectMenu, createOfferActionButtons } from './offers-embeds';
+import { startGpPriceTracker, runPriceCheck } from './gp-price-tracker';
 
 let client: Client;
 let botStatus = {
@@ -244,6 +245,9 @@ export async function startDiscordBot() {
 
       // Start ticket deletion scheduler (checks every hour)
       startTicketDeletionScheduler(readyClient);
+
+      // Start GP price tracker (auto-updates rates every 30 minutes)
+      startGpPriceTracker(readyClient);
     });
 
     // Handle interactions
@@ -323,6 +327,10 @@ export async function startDiscordBot() {
         await handleTicketKickCommand(message);
       } else if (message.content.startsWith('!rename ')) {
         await handleTicketRenameCommand(message);
+      } else if (message.content === '!checkgp' || message.content.startsWith('!checkgp ')) {
+        await handleCheckGpCommand(message);
+      } else if (message.content.startsWith('!gpconfig ')) {
+        await handleGpConfigCommand(message);
       }
     });
 
@@ -7725,6 +7733,75 @@ function startTicketDeletionScheduler(botClient: any) {
   run();
   setInterval(run, checkInterval);
   console.log('🎫 Ticket deletion scheduler started (checks every hour)');
+}
+
+// ── !checkgp / !gpconfig command handlers ─────────────────────────────────────
+async function handleCheckGpCommand(message: any) {
+  try {
+    const member = message.member;
+    const isStaff = member?.permissions?.has('Administrator') ||
+      member?.roles?.cache?.some((r: any) => ['1391833761573765193','1391833925671845899','1391834089518268627'].includes(r.id));
+    if (!isStaff) {
+      return message.reply({ content: '❌ Staff only.', ephemeral: true });
+    }
+
+    const loadingMsg = await message.reply('🔍 Fetching current GP market price…');
+
+    // force = true so it always posts even if price unchanged
+    const result = await runPriceCheck(client, true);
+    await loadingMsg.edit(result);
+  } catch (err: any) {
+    console.error('!checkgp error:', err);
+    await message.reply('❌ Error during GP price check. Check console for details.').catch(() => {});
+  }
+}
+
+async function handleGpConfigCommand(message: any) {
+  try {
+    const member = message.member;
+    const isStaff = member?.permissions?.has('Administrator') ||
+      member?.roles?.cache?.some((r: any) => ['1391833761573765193','1391833925671845899','1391834089518268627'].includes(r.id));
+    if (!isStaff) {
+      return message.reply({ content: '❌ Staff only.', ephemeral: true });
+    }
+
+    const args = message.content.slice('!gpconfig '.length).trim().split(/\s+/);
+    const subCmd = args[0]?.toLowerCase();
+
+    if (subCmd === 'channel') {
+      // !gpconfig channel <channelId or #channel>
+      const raw = args[1] || '';
+      const channelId = raw.replace(/[<#>]/g, '');
+      if (!channelId) return message.reply('Usage: `!gpconfig channel <channelId>`');
+      await storage.setTicketSetting('gp_tracker_channel', channelId);
+      return message.reply(`✅ GP tracker notifications will be sent to <#${channelId}>`);
+    }
+
+    if (subCmd === 'status') {
+      const lastPrice   = await storage.getTicketSetting('gp_tracker_last_price');
+      const lastUpdated = await storage.getTicketSetting('gp_tracker_last_updated');
+      const sellRate    = await storage.getTicketSetting('gp_tracker_sell_rate');
+      const buyRate     = await storage.getTicketSetting('gp_tracker_buy_rate');
+      const source      = await storage.getTicketSetting('gp_tracker_source');
+      const channel     = await storage.getTicketSetting('gp_tracker_channel');
+      const lines = [
+        '**💰 GP Tracker Status**',
+        `• Market Price : **${lastPrice ? '$' + parseFloat(lastPrice).toFixed(4) + '/M' : 'N/A'}** (via ${source || 'N/A'})`,
+        `• Our Sell Rate: **${sellRate ? '$' + parseFloat(sellRate).toFixed(4) + '/M' : 'N/A'}**`,
+        `• Our Buy Rate : **${buyRate  ? '$' + parseFloat(buyRate).toFixed(4)  + '/M' : 'N/A'}**`,
+        `• Last Updated : ${lastUpdated ? `<t:${Math.floor(new Date(lastUpdated).getTime()/1000)}:R>` : 'Never'}`,
+        `• Notify Channel: ${channel ? `<#${channel}>` : 'Not set — use \`!gpconfig channel <id>\`'}`,
+        '',
+        'Commands: `!checkgp` (force update) | `!gpconfig channel <id>` | `!gpconfig status`',
+      ];
+      return message.reply(lines.join('\n'));
+    }
+
+    return message.reply('Available sub-commands:\n• `!gpconfig channel <channelId>` — set notification channel\n• `!gpconfig status` — show current tracker status');
+  } catch (err: any) {
+    console.error('!gpconfig error:', err);
+    await message.reply('❌ Error. Check console for details.').catch(() => {});
+  }
 }
 
 export { client };
