@@ -2391,6 +2391,11 @@ async function handleButtonInteraction(interaction: any) {
       await handleCloseTicketButton(interaction);
       return;
     }
+
+    if (customId.startsWith('reopen_ticket_')) {
+      await handleReopenTicket(interaction);
+      return;
+    }
     
     if (customId === 'calculator_start') {
       await handleCalculatorStart(interaction);
@@ -7058,7 +7063,7 @@ async function handleOpenTicket(interaction: any) {
       permissionOverwrites: permOverwrites
     }) as TextChannel;
 
-    // Save to database
+    // Save to database (store category IDs so close/reopen use the right ones)
     await storage.createTicket({
       ticketNumber: ticketNum,
       channelId: ticketChannel.id,
@@ -7071,7 +7076,9 @@ async function handleOpenTicket(interaction: any) {
       closedByUsername: null,
       closedAt: null,
       scheduledDeleteAt: null,
-      channelDeleted: false
+      channelDeleted: false,
+      openCategoryId: panelOpenCategoryId,
+      closedCategoryId: panelClosedCategoryId,
     });
 
     // Welcome embed
@@ -7318,6 +7325,97 @@ async function handleCloseTicketCommand(message: any) {
   }
 }
 
+async function handleReopenTicket(interaction: any) {
+  try {
+    const channel = interaction.channel;
+    const ticket = await storage.getTicketByChannel(channel.id);
+
+    if (!ticket) {
+      await interaction.reply({ content: '❌ Ticket record not found.', ephemeral: true });
+      return;
+    }
+    if (ticket.status === 'open') {
+      await interaction.reply({ content: '⚠️ This ticket is already open.', ephemeral: true });
+      return;
+    }
+
+    // Staff-only permission check
+    const member = interaction.member;
+    const isStaff = member?.permissions?.has('Administrator') ||
+      member?.roles?.cache?.some((r: any) =>
+        TICKET_STAFF_ROLE_IDS.includes(r.id) ||
+        ['staff', 'admin', 'moderator', 'mod'].includes(r.name.toLowerCase())
+      );
+    if (!isStaff) {
+      await interaction.reply({ content: '❌ Only staff can reopen tickets.', ephemeral: true });
+      return;
+    }
+
+    await interaction.deferReply();
+
+    // Move channel back to the open category
+    const openCatId = ticket.openCategoryId || TICKET_OPEN_CATEGORY_ID;
+    try {
+      await channel.setParent(openCatId, { lockPermissions: false });
+    } catch (e) {
+      console.error('Could not move reopened ticket to open category:', e);
+    }
+
+    // Re-add the original ticket opener to the channel
+    try {
+      await channel.permissionOverwrites.edit(ticket.openedByUserId, {
+        ViewChannel: true,
+        SendMessages: true,
+        ReadMessageHistory: true,
+        AttachFiles: true,
+        EmbedLinks: true,
+      });
+    } catch (e) {
+      console.error('Could not re-add opener to channel:', e);
+    }
+
+    // Update ticket status — clear close fields and deletion timer
+    await storage.updateTicket(ticket.id, {
+      status: 'open',
+      closedByUserId: null,
+      closedByUsername: null,
+      closedAt: null,
+      scheduledDeleteAt: null,
+    });
+
+    const reopenEmbed = new EmbedBuilder()
+      .setTitle('🔓 Ticket Reopened')
+      .setDescription(
+        `This ticket has been reopened by <@${interaction.user.id}>.\n\n` +
+        `<@${ticket.openedByUserId}> has been re-added to this channel.\n\n` +
+        `The scheduled deletion has been cancelled.`
+      )
+      .addFields(
+        { name: '🎫 Opened by', value: `<@${ticket.openedByUserId}>`, inline: true },
+        { name: '🔓 Reopened by', value: `<@${interaction.user.id}>`, inline: true },
+      )
+      .setColor(0x57F287)
+      .setFooter({ text: '🐲 Dragon Services' })
+      .setTimestamp();
+
+    const closeBtn = new ButtonBuilder()
+      .setCustomId(`close_ticket_${channel.id}`)
+      .setLabel('🔒 Close Ticket')
+      .setStyle(ButtonStyle.Danger);
+    const closeRow = new ActionRowBuilder<ButtonBuilder>().addComponents(closeBtn);
+
+    await interaction.editReply({ embeds: [reopenEmbed], components: [closeRow] });
+
+    // Ping the opener so they know the ticket is active again
+    await channel.send({ content: `<@${ticket.openedByUserId}> Your ticket has been reopened by staff. Please continue here.` });
+
+    console.log(`🔓 Ticket reopened: ${channel.name} by ${interaction.user.username}`);
+  } catch (error) {
+    console.error('Error reopening ticket:', error);
+    try { await interaction.editReply({ content: '❌ Failed to reopen ticket.' }); } catch {}
+  }
+}
+
 async function closeTicket(channel: any, closedBy: any, botClient: any) {
   try {
     const ticket = await storage.getTicketByChannel(channel.id);
@@ -7367,11 +7465,18 @@ async function closeTicket(channel: any, closedBy: any, botClient: any) {
       .setFooter({ text: '🐲 Dragon Services' })
       .setTimestamp();
 
-    await channel.send({ embeds: [closingEmbed] });
+    const reopenBtn = new ButtonBuilder()
+      .setCustomId(`reopen_ticket_${channel.id}`)
+      .setLabel('🔓 Reopen Ticket')
+      .setStyle(ButtonStyle.Success);
+    const closingRow = new ActionRowBuilder<ButtonBuilder>().addComponents(reopenBtn);
 
-    // Move channel to the closed tickets category
+    await channel.send({ embeds: [closingEmbed], components: [closingRow] });
+
+    // Move channel to the correct closed tickets category (panel-specific or fallback)
+    const closedCatId = ticket.closedCategoryId || TICKET_CLOSED_CATEGORY_ID;
     try {
-      await channel.setParent(TICKET_CLOSED_CATEGORY_ID, { lockPermissions: false });
+      await channel.setParent(closedCatId, { lockPermissions: false });
     } catch (catErr) {
       console.error('Could not move ticket to closed category:', catErr);
     }
