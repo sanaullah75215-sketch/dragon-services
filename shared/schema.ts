@@ -526,6 +526,8 @@ export const tickets = pgTable("tickets", {
   scheduledDeleteAt: timestamp("scheduled_delete_at"),
   channelDeleted: boolean("channel_deleted").default(false).notNull(),
   transcriptHtml: text("transcript_html"),
+  openCategoryId: text("open_category_id"),
+  closedCategoryId: text("closed_category_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
