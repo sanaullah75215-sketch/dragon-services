@@ -330,17 +330,16 @@ export function createSkillCalculatorEmbed(data: any) {
 
   const embed = new EmbedBuilder()
     .setTitle(`${skillIcon} ${skillName} Calculator`)
-    .setColor(hasDiscount ? 0x57F287 : 0xFF6B35)
-    .addFields(
-      { name: '👑 Rank', value: userRank ? `**${userRank.name}**` : 'N/A', inline: true },
-      { name: '🎯 Target Range', value: `\`${startLevel} → ${endLevel}\``, inline: true },
-      { name: '🎁 Discount', value: hasDiscount ? `\`${discountPercentage}%\`` : '`0%`', inline: true },
-    );
+    .setColor(hasDiscount ? 0x57F287 : 0xFF6B35);
 
-  // Build description: RECOMMENDED (cheapest) first, then all other methods
+  // Build description: Rank / Target Range / Discount on top, then RECOMMENDED (cheapest),
+  // then all other methods — fields would render below the description, so these are text
   const [recommended, ...others] = methods;
 
-  let description = `### ✅ RECOMMENDED\n`;
+  let description = `👑 Rank: **${userRank ? userRank.name : 'N/A'}**\n`;
+  description += `🎯 Target Range: \`${startLevel} → ${endLevel}\`  •  🎁 Discount: \`${hasDiscount ? discountPercentage : 0}%\`\n\n`;
+
+  description += `### ✅ RECOMMENDED\n`;
   description += `**1- ${recommended.method.name}**\n`;
   description += `${methodLine(recommended)}\n`;
 
