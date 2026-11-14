@@ -309,75 +309,57 @@ export function createSkillCalculatorEmbed(data: any) {
   };
 
   const skillIcon = getSkillIcon(skill.name);
+  const skillName = skill.name.charAt(0).toUpperCase() + skill.name.slice(1);
 
   // Determine discount info from first method that has it (all share same %)
   const discountPercentage: number = methods[0]?.discountPercentage || 0;
   const hasDiscount = discountApplied && discountPercentage > 0;
 
-  const embed = new EmbedBuilder()
-    .setTitle(`${skillIcon} ${skill.name.charAt(0).toUpperCase() + skill.name.slice(1)} — Levels ${startLevel} to ${endLevel}`)
-    .setColor(hasDiscount ? 0x57F287 : 0xFF6B35);
-
   // USD conversion: $ per 1M GP (dashboard-configurable, default 0.18)
   const usdRatePerM = typeof data.usdRatePerM === 'number' && data.usdRatePerM > 0 ? data.usdRatePerM : 0.18;
   const formatUSD = (gp: number) => `$${(gp / 1_000_000 * usdRatePerM).toFixed(2)}`;
 
-  // Group method breakdowns by method name
-  const grouped: Map<string, any[]> = new Map();
-  for (const methodData of methods) {
-    const key = methodData.method.name;
-    if (!grouped.has(key)) grouped.set(key, []);
-    grouped.get(key)!.push(methodData);
-  }
+  // Method line: pills for range / XP / GP / USD
+  const methodLine = (m: any) => {
+    const cost = hasDiscount && m.discountAmount > 0
+      ? `~~${formatGP(m.originalCost)}~~ 💰 \`${formatGP(m.totalCost)} GP\``
+      : `💰 \`${formatGP(m.totalCost)} GP\``;
+    return `\`${m.levelRange}\` • \`${Math.round(m.expNeeded).toLocaleString()} XP\`\n` +
+           `${cost} • ≈ \`${formatUSD(m.totalCost)} USD\``;
+  };
 
-  let description = '';
-  if (hasDiscount && userRank) {
-    description += `🎁 **${userRank.name} rank — ${discountPercentage}% discount applied!**\n\n`;
-  }
+  const embed = new EmbedBuilder()
+    .setTitle(`${skillIcon} ${skillName} Calculator`)
+    .setColor(hasDiscount ? 0x57F287 : 0xFF6B35)
+    .addFields(
+      { name: '👑 Rank', value: userRank ? `**${userRank.name}**` : 'N/A', inline: true },
+      { name: '🎯 Target Range', value: `\`${startLevel} → ${endLevel}\``, inline: true },
+      { name: '🎁 Discount', value: hasDiscount ? `\`${discountPercentage}%\`` : '`0%`', inline: true },
+    );
 
-  let groupIndex = 0;
+  // Build description: RECOMMENDED (cheapest) first, then all other methods
+  const [recommended, ...others] = methods;
 
-  for (const [methodName, entries] of grouped) {
-    const methodEmoji = getMethodEmoji(methodName);
-    let methodTotal = 0;
-    let methodOriginal = 0;
-    let methodDiscount = 0;
+  let description = `### ✅ RECOMMENDED\n`;
+  description += `**1- ${recommended.method.name}**\n`;
+  description += `${methodLine(recommended)}\n`;
 
-    description += `**${methodEmoji} ${methodName}**\n`;
-
-    for (const entry of entries) {
-      const { levelRange, totalCost, originalCost, discountAmount, gpPerXp } = entry;
-      methodTotal += totalCost;
-      methodOriginal += originalCost;
-      methodDiscount += discountAmount || 0;
-
-      if (hasDiscount && discountAmount > 0) {
-        description += `\`[${levelRange}]\` • ${gpPerXp} gp/xp • ~~${formatGP(originalCost)}~~ → **${formatGP(totalCost)} GP** (≈ ${formatUSD(totalCost)})\n`;
-      } else {
-        description += `\`[${levelRange}]\` • ${gpPerXp} gp/xp • 💰 ${formatGP(totalCost)} GP (≈ ${formatUSD(totalCost)})\n`;
-      }
-    }
-
-    if (hasDiscount && methodDiscount > 0) {
-      description += `> 💵 **Method Total: ${formatGP(methodTotal)} GP (≈ ${formatUSD(methodTotal)})** *(saved ${formatGP(methodDiscount)} GP)*\n`;
-    } else {
-      description += `> 💵 **Method Total: ${formatGP(methodTotal)} GP (≈ ${formatUSD(methodTotal)})**\n`;
-    }
-
-    groupIndex++;
-    if (groupIndex < grouped.size) {
-      description += `\n`;
-    }
+  if (others.length > 0) {
+    description += `### 📋 ALL METHODS\n`;
+    others.forEach((m: any, i: number) => {
+      description += `**${i + 2}- ${m.method.name}**\n`;
+      description += `${methodLine(m)}\n\n`;
+    });
   }
 
   if (!hasDiscount) {
-    description += `\n\n*💡 Spend more GP to unlock rank discounts (up to 8% off)*`;
+    description += `*💡 Spend more GP to unlock rank discounts (up to 8% off)*`;
   }
 
   embed.setDescription(description.trim());
 
   embed.setFooter({
-    text: `🐲 Dragon Services`,
+    text: `Total XP Required: ${Math.round(expNeeded).toLocaleString()} • 🐲 Dragon Services`,
     iconURL: 'https://oldschool.runescape.wiki/images/thumb/4/4e/Dragon_full_helm.png/21px-Dragon_full_helm.png'
   });
 

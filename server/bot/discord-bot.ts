@@ -3576,77 +3576,50 @@ async function handleSkillCalculatorCommand(message: any) {
       // User doesn't have wallet yet, no discount applied
     }
 
-    // Calculate pricing using method-based level ranges
-    // Each method shows separately with its applicable level range
+    // Calculate pricing: every method is priced for the FULL requested range
+    // (alternative options), sorted cheapest → most expensive, cheapest = RECOMMENDED
     const methodBreakdown: any[] = [];
-    let totalOriginalCost = 0;
-    let totalExpCovered = 0;
-    
-    // Use the methods in their configured sort order (already sorted by database query)
-    console.log(`  🔍 Processing methods for level range ${startLevel}-${endLevel}:`);
-    
+
     for (const method of trainingMethods) {
-      const methodMinLevel = method.minLevel || 1;
-      const methodMaxLevel = method.maxLevel || 99;
-      
-      // Determine the overlapping range between requested levels and method's level range
-      const rangeStart = Math.max(startLevel, methodMinLevel);
-      const rangeEnd = Math.min(endLevel, methodMaxLevel);
-      
-      // Skip if there's no overlap OR if start and end are the same (0 XP range)
-      if (rangeStart >= rangeEnd) {
-        console.log(`  ⏭️  Skipping ${method.name}: no overlap (method: ${methodMinLevel}-${methodMaxLevel}, requested: ${startLevel}-${endLevel})`);
-        continue;
-      }
-      
-      // Calculate XP for this specific range
-      const rangeStartExp = await storage.getExperienceByLevel(rangeStart);
-      const rangeEndExp = await storage.getExperienceByLevel(rangeEnd);
-      
-      if (rangeStartExp === null || rangeStartExp === undefined || rangeEndExp === null || rangeEndExp === undefined) {
-        console.log(`  ⚠️  Could not get XP for range ${rangeStart}-${rangeEnd}`);
-        continue;
-      }
-      
-      const rangeExpNeeded = rangeEndExp - rangeStartExp;
-      
-      // Skip if there's no XP to gain (shouldn't happen, but double-check)
-      if (rangeExpNeeded <= 0) {
-        console.log(`  ⏭️  Skipping ${method.name}: 0 XP (Levels ${rangeStart}-${rangeEnd})`);
-        continue;
-      }
-      
       const gpPerXp = parseFloat(method.gpPerXp);
-      const rangeCost = rangeExpNeeded * gpPerXp;
-      const rangeHours = rangeExpNeeded / (method.xpPerHour || 50000);
-      
-      totalOriginalCost += rangeCost;
-      totalExpCovered += rangeExpNeeded;
-      
-      console.log(`  📈 ${method.name}: Levels ${rangeStart}-${rangeEnd}`);
-      console.log(`    XP Needed: ${rangeExpNeeded.toLocaleString()}`);
+      if (!isFinite(gpPerXp) || gpPerXp <= 0) {
+        console.log(`  ⏭️  Skipping ${method.name}: invalid gp/xp (${method.gpPerXp})`);
+        continue;
+      }
+
+      const rangeCost = expNeeded * gpPerXp;
+      const rangeHours = expNeeded / (method.xpPerHour || 50000);
+
+      console.log(`  📈 ${method.name}: Levels ${startLevel}-${endLevel}`);
+      console.log(`    XP Needed: ${expNeeded.toLocaleString()}`);
       console.log(`    GP/XP: ${gpPerXp}`);
       console.log(`    Cost: ${rangeCost.toLocaleString()} GP`);
-      
+
       methodBreakdown.push({
         method,
-        levelRange: `${rangeStart}-${rangeEnd}`,
-        rangeStart,
-        rangeEnd,
-        expNeeded: rangeExpNeeded,
+        levelRange: `${startLevel}-${endLevel}`,
+        rangeStart: startLevel,
+        rangeEnd: endLevel,
+        expNeeded,
         gpPerXp,
         originalCost: rangeCost,
         estimatedHours: rangeHours
       });
     }
+
+    // Cheapest first — first entry becomes the RECOMMENDED method
+    methodBreakdown.sort((a, b) => a.originalCost - b.originalCost);
     
     // Check if no methods were found
     if (methodBreakdown.length === 0) {
-      await message.reply(`❌ **No applicable training methods found!**\n\n` +
-        `No training methods are configured for ${skill.name} that cover levels ${startLevel}-${endLevel}.\n` +
+      await message.reply(`❌ **No valid training methods found!**\n\n` +
+        `No training methods with valid pricing are configured for ${skill.name}.\n` +
         `Please contact an admin to add training methods for this skill.`);
       return;
     }
+
+    // Sum of all method costs (used for discount proportions)
+    const totalOriginalCost = methodBreakdown.reduce((sum, m) => sum + m.originalCost, 0);
     
     // Apply customer rank discount to total cost
     let finalTotalCost = totalOriginalCost;
