@@ -46,6 +46,7 @@ export default function GpRatesPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingRate, setEditingRate] = useState<GpRate | null>(null);
   const [channelInput, setChannelInput] = useState("");
+  const [rateInput, setRateInput] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     methodName: "",
     methodType: "crypto",
@@ -86,6 +87,20 @@ export default function GpRatesPage() {
       setChannelInput("");
     },
     onError: () => toast({ title: "Failed to save channel", variant: "destructive" }),
+  });
+
+  const { data: usdRateData } = useQuery<{ rate: number }>({
+    queryKey: ["/api/skilling-usd-rate"],
+  });
+
+  const saveUsdRateMutation = useMutation({
+    mutationFn: async (rate: number) => apiRequest("PUT", "/api/skilling-usd-rate", { rate }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/skilling-usd-rate"] });
+      toast({ title: "✅ Skilling USD rate saved", description: "The skilling calculator now uses the new $ rate." });
+      setRateInput(null);
+    },
+    onError: () => toast({ title: "Failed to save USD rate", variant: "destructive" }),
   });
 
   const createMutation = useMutation({
@@ -313,6 +328,49 @@ export default function GpRatesPage() {
                 >
                   Set Channel
                 </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* ── Skilling Calculator USD Rate ──────────────────────────────── */}
+        <Card className="bg-slate-800/60 border-slate-600 mb-6">
+          <CardHeader className="p-4 pb-2">
+            <CardTitle className="text-white flex items-center gap-2 text-base sm:text-lg">
+              <DollarSign className="w-5 h-5 text-yellow-400" />
+              Skilling Calculator USD Rate
+            </CardTitle>
+            <CardDescription className="text-slate-400 text-xs">
+              $ price per 1M GP shown alongside GP in the skilling calculator embed (default 0.18)
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-4 pt-3">
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="flex gap-2 flex-1">
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder={usdRateData ? `$${usdRateData.rate.toFixed(2)} per 1M GP` : "0.18"}
+                  value={rateInput ?? ""}
+                  onChange={e => setRateInput(e.target.value)}
+                  className="bg-slate-700 border-slate-600 text-white placeholder-slate-500 text-sm h-9"
+                />
+                <Button
+                  onClick={() => {
+                    const rate = parseFloat(rateInput ?? "");
+                    if (!isNaN(rate) && rate >= 0) saveUsdRateMutation.mutate(rate);
+                  }}
+                  disabled={!rateInput || isNaN(parseFloat(rateInput)) || saveUsdRateMutation.isPending}
+                  size="sm"
+                  variant="outline"
+                  className="border-slate-600 text-slate-300 hover:bg-slate-700 shrink-0"
+                >
+                  Save Rate
+                </Button>
+              </div>
+              <div className="text-slate-400 text-xs self-center">
+                Current: <span className="text-yellow-400 font-bold">${(usdRateData?.rate ?? 0.18).toFixed(2)}</span> / 1M GP
               </div>
             </div>
           </CardContent>

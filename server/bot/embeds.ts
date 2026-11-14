@@ -318,6 +318,10 @@ export function createSkillCalculatorEmbed(data: any) {
     .setTitle(`${skillIcon} ${skill.name.charAt(0).toUpperCase() + skill.name.slice(1)} — Levels ${startLevel} to ${endLevel}`)
     .setColor(hasDiscount ? 0x57F287 : 0xFF6B35);
 
+  // USD conversion: $ per 1M GP (dashboard-configurable, default 0.18)
+  const usdRatePerM = typeof data.usdRatePerM === 'number' && data.usdRatePerM > 0 ? data.usdRatePerM : 0.18;
+  const formatUSD = (gp: number) => `$${(gp / 1_000_000 * usdRatePerM).toFixed(2)}`;
+
   // Group method breakdowns by method name
   const grouped: Map<string, any[]> = new Map();
   for (const methodData of methods) {
@@ -331,9 +335,6 @@ export function createSkillCalculatorEmbed(data: any) {
     description += `🎁 **${userRank.name} rank — ${discountPercentage}% discount applied!**\n\n`;
   }
 
-  let grandOriginal = 0;
-  let grandTotal = 0;
-  let grandDiscount = 0;
   let groupIndex = 0;
 
   for (const [methodName, entries] of grouped) {
@@ -351,35 +352,21 @@ export function createSkillCalculatorEmbed(data: any) {
       methodDiscount += discountAmount || 0;
 
       if (hasDiscount && discountAmount > 0) {
-        description += `\`[${levelRange}]\` • ${gpPerXp} gp/xp • ~~${formatGP(originalCost)}~~ → **${formatGP(totalCost)} GP**\n`;
+        description += `\`[${levelRange}]\` • ${gpPerXp} gp/xp • ~~${formatGP(originalCost)}~~ → **${formatGP(totalCost)} GP** (≈ ${formatUSD(totalCost)})\n`;
       } else {
-        description += `\`[${levelRange}]\` • ${gpPerXp} gp/xp • 💰 ${formatGP(totalCost)} GP\n`;
+        description += `\`[${levelRange}]\` • ${gpPerXp} gp/xp • 💰 ${formatGP(totalCost)} GP (≈ ${formatUSD(totalCost)})\n`;
       }
     }
 
     if (hasDiscount && methodDiscount > 0) {
-      description += `> 💵 **Method Total: ${formatGP(methodTotal)} GP** *(saved ${formatGP(methodDiscount)} GP)*\n`;
+      description += `> 💵 **Method Total: ${formatGP(methodTotal)} GP (≈ ${formatUSD(methodTotal)})** *(saved ${formatGP(methodDiscount)} GP)*\n`;
     } else {
-      description += `> 💵 **Method Total: ${formatGP(methodTotal)} GP**\n`;
+      description += `> 💵 **Method Total: ${formatGP(methodTotal)} GP (≈ ${formatUSD(methodTotal)})**\n`;
     }
-
-    grandTotal += methodTotal;
-    grandOriginal += methodOriginal;
-    grandDiscount += methodDiscount;
 
     groupIndex++;
     if (groupIndex < grouped.size) {
       description += `\n`;
-    }
-  }
-
-  if (grouped.size > 1 || hasDiscount) {
-    description += `\n━━━━━━━━━━━━━━━━━━━━\n`;
-    if (hasDiscount && grandDiscount > 0) {
-      description += `~~${formatGP(grandOriginal)}~~ → 💰 **Grand Total: ${formatGP(grandTotal)} GP**\n`;
-      description += `🎁 You save **${formatGP(grandDiscount)} GP** (${discountPercentage}% off)`;
-    } else {
-      description += `💰 **Grand Total: ${formatGP(grandTotal)} GP**`;
     }
   }
 

@@ -520,6 +520,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // GET /api/skilling-usd-rate — USD price per 1M GP used in the skilling calculator
+  app.get("/api/skilling-usd-rate", async (req, res) => {
+    try {
+      const value = await storage.getTicketSetting('skilling_usd_rate');
+      const rate = value ? (parseFloat(value) || 0.18) : 0.18;
+      res.json({ rate });
+    } catch (err: any) {
+      console.error('Skilling USD rate fetch error:', err);
+      res.status(500).json({ message: err.message || 'Failed to fetch rate' });
+    }
+  });
+
+  // PUT /api/skilling-usd-rate — update the USD price per 1M GP for the skilling calculator
+  app.put("/api/skilling-usd-rate", async (req, res) => {
+    try {
+      const { rate } = req.body as { rate?: number };
+      if (typeof rate !== 'number' || !isFinite(rate) || rate < 0) {
+        return res.status(400).json({ message: 'Invalid rate — must be a number (e.g. 0.18)' });
+      }
+      await storage.setTicketSetting('skilling_usd_rate', String(rate));
+      res.json({ success: true, rate });
+    } catch (err: any) {
+      console.error('Skilling USD rate update error:', err);
+      res.status(500).json({ message: err.message || 'Rate update failed' });
+    }
+  });
+
   // Payment Methods API Routes
   app.get("/api/payment-methods", async (req, res) => {
     try {

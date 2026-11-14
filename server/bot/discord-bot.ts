@@ -3605,6 +3605,15 @@ async function handleSkillCalculatorCommand(message: any) {
     // Update command usage
     storage.updateCommandUsage('skill-calculator').catch(() => {});
     
+    // USD rate per 1M GP (dashboard-configurable via settings, default 0.18)
+    let usdRatePerM = 0.18;
+    try {
+      const usdRateSetting = await storage.getTicketSetting('skilling_usd_rate');
+      if (usdRateSetting) usdRatePerM = parseFloat(usdRateSetting) || 0.18;
+    } catch {
+      // Fall back to default rate if settings lookup fails
+    }
+
     // Create and send result embed
     const embed = createSkillCalculatorEmbed({
       skill,
@@ -3614,7 +3623,8 @@ async function handleSkillCalculatorCommand(message: any) {
       methods: methodCalculations,
       userRank: userWallet ? getCustomerRank(userWallet.totalSpentGp, userWallet.manualRank) : null,
       totalSpent: userWallet ? userWallet.totalSpentGp : 0,
-      discountApplied: discountInfo !== null
+      discountApplied: discountInfo !== null,
+      usdRatePerM
     });
 
     console.log(`Skill calculator: ${skill.name} with icon: ${skill.icon}`);
