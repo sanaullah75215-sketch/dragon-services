@@ -319,14 +319,14 @@ export function createSkillCalculatorEmbed(data: any) {
   const usdRatePerM = typeof data.usdRatePerM === 'number' && data.usdRatePerM > 0 ? data.usdRatePerM : 0.18;
   const formatUSD = (gp: number) => `$${(gp / 1_000_000 * usdRatePerM).toFixed(2)}`;
 
-  // Method line: pills for range / XP / GP / USD
+  // Method line: bold numbers (bigger look), emoji anchors for XP/GP
   const methodLine = (m: any) => {
     const cost = hasDiscount && m.discountAmount > 0
-      ? `~~${formatGP(m.originalCost)}~~ 💰 \`${formatGP(m.totalCost)} GP\``
-      : `💰 \`${formatGP(m.totalCost)} GP\``;
-    const xpLabel = `${data.statsEmoji ? data.statsEmoji + ' ' : ''}\`${Math.round(m.expNeeded).toLocaleString()} XP\``;
-    return `\`${m.levelRange}\` • ${xpLabel}\n` +
-           `${cost} • ≈ \`${formatUSD(m.totalCost)} USD\``;
+      ? `~~${formatGP(m.originalCost)}~~ 💰 **${formatGP(m.totalCost)} GP**`
+      : `💰 **${formatGP(m.totalCost)} GP**`;
+    const xpLabel = `${data.statsEmoji ? data.statsEmoji + ' ' : ''}**${Math.round(m.expNeeded).toLocaleString()} XP**`;
+    return `**${m.levelRange}** • ${xpLabel}\n` +
+           `${cost} • ≈ **${formatUSD(m.totalCost)} USD**`;
   };
 
   const embed = new EmbedBuilder()
@@ -341,7 +341,7 @@ export function createSkillCalculatorEmbed(data: any) {
   const others = methods.filter((m: any) => m !== recommended);
 
   let description = `👑 Rank: **${userRank ? userRank.name : 'N/A'}**\n`;
-  description += `🎯 Target Range: \`${startLevel} → ${endLevel}\`  •  🎁 Discount: \`${hasDiscount ? discountPercentage : 0}%\`\n\n`;
+  description += `🎯 Target Range: **${startLevel} → ${endLevel}**  •  🎁 Discount: **${hasDiscount ? discountPercentage : 0}%**\n\n`;
 
   description += `### ✅ RECOMMENDED\n`;
   description += `**1- ${recommended.method.name}**\n`;

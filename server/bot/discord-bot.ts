@@ -3505,9 +3505,34 @@ function getGuildEmoji(guild: any, ...names: string[]): string | null {
   return null;
 }
 
-// Skill calculator command handler
-async function handleSkillCalculatorCommand(message: any) {
+// Find the best custom emoji for a skill from the guild's emojis.
+// Tries exact names first (osrs_<skill>, <skill>, aliases), then any emoji
+// whose name contains the skill name (e.g. "strength_icon", "osrs_agility").
+function getSkillEmojiFromGuild(guild: any, skillLower: string): string | null {
   try {
+    const cache = guild?.emojis?.cache;
+    if (!cache || !skillLower) return null;
+    const aliases: { [key: string]: string[] } = {
+      strength: ['strenght'],
+      runecrafting: ['runecraft'],
+      hitpoints: ['hp', 'constitution'],
+      hunter: ['hunting'],
+      ranged: ['range'],
+    };
+    const names = [`osrs_${skillLower}`, skillLower, ...(aliases[skillLower] || [])];
+    for (const name of names) {
+      const emoji = cache.find((e: any) => e.name === name);
+      if (emoji) return `<:${emoji.name}:${emoji.id}>`;
+    }
+    // Partial match — any emoji name containing the skill name
+    const partial = cache.find((e: any) => e.name && e.name.toLowerCase().includes(skillLower));
+    if (partial) return `<:${partial.name}:${partial.id}>`;
+  } catch {}
+  return null;
+}
+
+// Skill calculator command handler
+async function handleSkillCalculatorCommand(message: any) {  try {
     // Parse command: !s skillname startlevel endlevel
     const args = message.content.slice(3).trim().split(' ');
     
@@ -3724,23 +3749,11 @@ async function handleSkillCalculatorCommand(message: any) {
     }
 
     // Prefer custom OSRS skill emojis uploaded to this server
-    // Checks: osrs_<skill>, <skill>, and common name variants (e.g. "strenght")
+    // Checks: osrs_<skill>, <skill>, common variants, then partial-name matches
     const skillLower = skill.name.toLowerCase();
-    const skillEmojiAliases: { [key: string]: string[] } = {
-      strength: ['strenght'],
-      runecrafting: ['runecraft'],
-      hitpoints: ['hp'],
-      hunter: ['hunting'],
-      ranged: ['range'],
-    };
-    const customSkillIcon = getGuildEmoji(
-      message.guild,
-      `osrs_${skillLower}`,
-      skillLower,
-      ...(skillEmojiAliases[skillLower] || [])
-    );
+    const customSkillIcon = getSkillEmojiFromGuild(message.guild, skillLower);
 
-    // Stats emoji for the "Total XP Required" footer
+    // Stats emoji for the XP lines
     const statsEmoji = getGuildEmoji(message.guild, 'stats', 'Stats', 'osrs_stats');
 
     // Create and send result embed
