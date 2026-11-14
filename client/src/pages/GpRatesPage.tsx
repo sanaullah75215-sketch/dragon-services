@@ -89,7 +89,7 @@ export default function GpRatesPage() {
     onError: () => toast({ title: "Failed to save channel", variant: "destructive" }),
   });
 
-  const { data: usdRateData } = useQuery<{ rate: number; mode: string }>({
+  const { data: usdRateData } = useQuery<{ rate: number; mode: string; source: string }>({
     queryKey: ["/api/skilling-usd-rate"],
   });
 
@@ -111,6 +111,15 @@ export default function GpRatesPage() {
       toast({ title: "✅ USD rate mode updated" });
     },
     onError: () => toast({ title: "Failed to update USD rate mode", variant: "destructive" }),
+  });
+
+  const usdSourceMutation = useMutation({
+    mutationFn: async (source: string) => apiRequest("PUT", "/api/skilling-usd-rate", { source }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/skilling-usd-rate"] });
+      toast({ title: "✅ Tracker rate source updated" });
+    },
+    onError: () => toast({ title: "Failed to update rate source", variant: "destructive" }),
   });
 
   const createMutation = useMutation({
@@ -391,15 +400,33 @@ export default function GpRatesPage() {
                 onCheckedChange={(checked) => usdModeMutation.mutate(checked ? "auto" : "manual")}
                 data-testid="switch-usd-auto-sync"
               />
-              <div>
+              <div className="flex-1">
                 <div className="text-white text-sm font-medium">Auto-sync with GP Price Tracker</div>
                 <div className="text-slate-400 text-xs">
                   {usdRateData?.mode === "auto"
-                    ? "ON — rate follows the tracker's sell rate (updates every 30 min)"
+                    ? "ON — rate follows the tracker (updates every 30 min)"
                     : "OFF — using the fixed rate above (default $0.18)"}
                 </div>
               </div>
             </div>
+
+            {usdRateData?.mode === "auto" && (
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 mt-3 sm:pl-9">
+                <span className="text-slate-400 text-xs shrink-0">Follow:</span>
+                <Select
+                  value={usdRateData?.source ?? "buy"}
+                  onValueChange={(v) => usdSourceMutation.mutate(v)}
+                >
+                  <SelectTrigger className="w-full sm:w-[320px] bg-slate-700 border-slate-600 text-white text-xs h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="buy">🟢 Buy rate — what we buy GP for (lower)</SelectItem>
+                    <SelectItem value="sell">🔵 Sell rate — what we sell GP for (higher)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </CardContent>
         </Card>
 

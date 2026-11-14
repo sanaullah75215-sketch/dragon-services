@@ -192,11 +192,14 @@ export async function runPriceCheck(botClient?: Client, force = false): Promise<
     await storage.setTicketSetting('gp_tracker_buy_rate',     String(buyRate));
     await storage.setTicketSetting('gp_tracker_source',       source);
 
-    // Auto-sync: skilling calculator USD rate follows our sell rate in auto mode
+    // Auto-sync: skilling calculator USD rate follows our tracker rate in auto mode
+    // Source setting: 'buy' = what we pay for GP (default, lower), 'sell' = what we sell GP at (higher)
     const usdMode = await storage.getTicketSetting('skilling_usd_rate_mode');
     if (usdMode === 'auto') {
-      await storage.setTicketSetting('skilling_usd_rate', String(sellRate));
-      console.log(`[GP Tracker] Auto-synced skilling USD rate → $${sellRate.toFixed(4)}/M`);
+      const usdSource = (await storage.getTicketSetting('skilling_usd_rate_source')) || 'buy';
+      const usdValue = usdSource === 'sell' ? sellRate : buyRate;
+      await storage.setTicketSetting('skilling_usd_rate', String(usdValue));
+      console.log(`[GP Tracker] Auto-synced skilling USD rate → $${usdValue.toFixed(4)}/M (${usdSource} rate)`);
     }
   } catch {}
 

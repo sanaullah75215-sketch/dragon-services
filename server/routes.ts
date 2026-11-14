@@ -525,8 +525,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const value = await storage.getTicketSetting('skilling_usd_rate');
       const mode = (await storage.getTicketSetting('skilling_usd_rate_mode')) || 'manual';
+      const source = (await storage.getTicketSetting('skilling_usd_rate_source')) || 'buy';
       const rate = value ? (parseFloat(value) || 0.18) : 0.18;
-      res.json({ rate, mode: mode === 'auto' ? 'auto' : 'manual' });
+      res.json({ rate, mode: mode === 'auto' ? 'auto' : 'manual', source: source === 'sell' ? 'sell' : 'buy' });
     } catch (err: any) {
       console.error('Skilling USD rate fetch error:', err);
       res.status(500).json({ message: err.message || 'Failed to fetch rate' });
@@ -538,7 +539,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // mode 'auto' = rate follows the GP price tracker's sell rate every 30 min
   app.put("/api/skilling-usd-rate", async (req, res) => {
     try {
-      const { rate, mode } = req.body as { rate?: number; mode?: string };
+      const { rate, mode, source } = req.body as { rate?: number; mode?: string; source?: string };
+      if (source !== undefined) {
+        if (source !== 'buy' && source !== 'sell') {
+          return res.status(400).json({ message: 'Invalid source — must be "buy" or "sell"' });
+        }
+        await storage.setTicketSetting('skilling_usd_rate_source', source);
+      }
       if (mode !== undefined) {
         if (mode !== 'manual' && mode !== 'auto') {
           return res.status(400).json({ message: 'Invalid mode — must be "manual" or "auto"' });
@@ -553,7 +560,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const newValue = await storage.getTicketSetting('skilling_usd_rate');
       const newMode = (await storage.getTicketSetting('skilling_usd_rate_mode')) || 'manual';
-      res.json({ success: true, rate: newValue ? parseFloat(newValue) : 0.18, mode: newMode === 'auto' ? 'auto' : 'manual' });
+      const newSource = (await storage.getTicketSetting('skilling_usd_rate_source')) || 'buy';
+      res.json({
+        success: true,
+        rate: newValue ? parseFloat(newValue) : 0.18,
+        mode: newMode === 'auto' ? 'auto' : 'manual',
+        source: newSource === 'sell' ? 'sell' : 'buy'
+      });
     } catch (err: any) {
       console.error('Skilling USD rate update error:', err);
       res.status(500).json({ message: err.message || 'Rate update failed' });
