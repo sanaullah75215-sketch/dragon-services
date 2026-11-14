@@ -5,6 +5,27 @@ echo "================================================"
 echo " Dragon Services Bot - Starting up"
 echo "================================================"
 
+# ── Automatic database backup on every update ──────────────────────────
+# Only runs when tables already exist (i.e., an update, not first boot).
+# Saves a timestamped dump to /app/backups (mounted to ./backups on the
+# VPS host) and keeps the most recent 14 backups.
+BACKUP_DIR="/app/backups"
+TABLE_EXISTS=$(psql "$DATABASE_URL" -t -c "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'gp_rates')" 2>/dev/null | tr -d ' \n')
+
+if [ "$TABLE_EXISTS" = "t" ]; then
+  echo "[backup] Creating automatic database backup..."
+  mkdir -p "$BACKUP_DIR"
+  BACKUP_FILE="$BACKUP_DIR/backup_$(date +%F_%H%M%S).sql"
+  if pg_dump "$DATABASE_URL" > "$BACKUP_FILE" 2>/dev/null && [ -s "$BACKUP_FILE" ]; then
+    echo "     ✅ Backup saved: $BACKUP_FILE ($(du -h "$BACKUP_FILE" | cut -f1))"
+    # Keep only the 14 most recent backups
+    ls -1t "$BACKUP_DIR"/backup_*.sql 2>/dev/null | tail -n +15 | xargs -r rm -f
+  else
+    rm -f "$BACKUP_FILE"
+    echo "     ⚠️ WARNING: Backup failed — continuing anyway (data untouched)"
+  fi
+fi
+
 # Initial schema setup (first run only)
 echo "[1/3] Setting up database schema..."
 TABLE_EXISTS=$(psql "$DATABASE_URL" -t -c "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'gp_rates')" 2>/dev/null | tr -d ' \n')

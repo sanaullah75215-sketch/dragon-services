@@ -5,4 +5,4 @@ server/public
 vite.config.ts.*
 *.tar.gz
 .env
-dragon-services-migration.sql
+dragon-services-migration.sqlbackups
