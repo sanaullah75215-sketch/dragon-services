@@ -1,7 +1,7 @@
 FROM node:20-alpine
 
-# Install PostgreSQL client for database import
-RUN apk add --no-cache postgresql-client
+# Install PostgreSQL client for database import + curl for backup uploads
+RUN apk add --no-cache postgresql-client curl
 
 WORKDIR /app
 

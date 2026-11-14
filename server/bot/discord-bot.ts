@@ -248,6 +248,9 @@ export async function startDiscordBot() {
 
       // Start GP price tracker (auto-updates rates every 30 minutes)
       startGpPriceTracker(readyClient);
+
+      // Start weekly sales report (posts every Sunday 20:00 UTC)
+      startWeeklyReportScheduler(readyClient);
     });
 
     // Handle interactions
@@ -1498,6 +1501,93 @@ async function handleSelectMenu(interaction: any) {
 }
 
 // Calculator command handler
+// ── Weekly sales report ────────────────────────────────────────────────────────
+// Posts a summary of the last 7 days of orders/revenue every Sunday 20:00 UTC
+// to the channel configured via WEEKLY_REPORT_CHANNEL_ID (empty = disabled).
+function startWeeklyReportScheduler(client: any): void {
+  if (!process.env.WEEKLY_REPORT_CHANNEL_ID) {
+    console.log('[Weekly Report] No WEEKLY_REPORT_CHANNEL_ID set — weekly sales report disabled');
+    return;
+  }
+
+  const nextRunMs = () => {
+    const now = new Date();
+    const day = now.getUTCDay(); // 0 = Sunday
+    const daysAhead = (7 - day) % 7;
+    const target = new Date(Date.UTC(
+      now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + daysAhead, 20, 0, 0, 0
+    ));
+    if (target.getTime() <= now.getTime()) {
+      target.setUTCDate(target.getUTCDate() + 7);
+    }
+    return target.getTime() - now.getTime();
+  };
+
+  const sendReport = async () => {
+    try {
+      const channelId = process.env.WEEKLY_REPORT_CHANNEL_ID!;
+      const channel = await client.channels.fetch(channelId);
+      if (!channel || typeof channel.send !== 'function') {
+        console.error('[Weekly Report] Channel not found or not text-based:', channelId);
+        return;
+      }
+
+      const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const allOrders = await storage.getOrders();
+      const recent = allOrders.filter((o: any) => new Date(o.createdAt) >= since);
+
+      const completed = recent.filter((o: any) => o.status === 'completed');
+      const inProgress = recent.filter((o: any) => o.status === 'in_progress');
+      const pending = recent.filter((o: any) => o.status === 'pending' || o.status === 'confirmed');
+      const cancelled = recent.filter((o: any) => o.status === 'cancelled' || o.status === 'refunded');
+
+      let revenueGp = 0;
+      for (const o of completed) revenueGp += Number(o.totalAmountGp) || 0;
+      const avgGp = completed.length ? Math.round(revenueGp / completed.length) : 0;
+
+      // USD conversion using the skilling calculator rate
+      let usdRate = 0.18;
+      try {
+        const r = await storage.getTicketSetting('skilling_usd_rate');
+        if (r) usdRate = parseFloat(r) || 0.18;
+      } catch {}
+      const revenueUsd = revenueGp / 1_000_000 * usdRate;
+
+      const embed = new EmbedBuilder()
+        .setTitle('📊 Weekly Sales Report')
+        .setColor(0xFF6B35)
+        .setDescription(`Order activity from **${since.toDateString().slice(0, 10)}** to **${new Date().toDateString().slice(0, 10)}**`)
+        .addFields(
+          { name: '🧾 New Orders', value: `**${recent.length}**`, inline: true },
+          { name: '✅ Completed', value: `**${completed.length}**`, inline: true },
+          { name: '🔄 In Progress', value: `**${inProgress.length}**`, inline: true },
+          { name: '⏳ Pending', value: `**${pending.length}**`, inline: true },
+          { name: '❌ Cancelled/Refunded', value: `**${cancelled.length}**`, inline: true },
+          { name: '💰 Revenue', value: `**${revenueGp.toLocaleString()} GP** (≈ $${revenueUsd.toFixed(2)})`, inline: true },
+          { name: '📈 Avg Order Value', value: completed.length ? `**${avgGp.toLocaleString()} GP**` : '—', inline: true },
+        )
+        .setFooter({ text: '🐲 Dragon Services — Weekly Report' })
+        .setTimestamp();
+
+      await channel.send({ embeds: [embed] });
+      console.log('[Weekly Report] Weekly sales report sent');
+    } catch (err: any) {
+      console.error('[Weekly Report] Failed to send report:', err.message);
+    }
+  };
+
+  const scheduleNext = () => {
+    const ms = nextRunMs();
+    const nextAt = new Date(Date.now() + ms);
+    console.log(`[Weekly Report] Scheduled — next report ${nextAt.toISOString()}`);
+    setTimeout(async () => {
+      await sendReport();
+      scheduleNext();
+    }, ms);
+  };
+  scheduleNext();
+}
+
 async function handleCalculatorCommand(message: any) {
   try {
     // Update command usage

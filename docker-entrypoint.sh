@@ -20,6 +20,24 @@ if [ "$TABLE_EXISTS" = "t" ]; then
     echo "     ✅ Backup saved: $BACKUP_FILE ($(du -h "$BACKUP_FILE" | cut -f1))"
     # Keep only the 14 most recent backups
     ls -1t "$BACKUP_DIR"/backup_*.sql 2>/dev/null | tail -n +15 | xargs -r rm -f
+
+    # Off-VPS copy: upload the backup to a Discord channel via webhook (optional)
+    if [ -n "$BACKUP_WEBHOOK_URL" ]; then
+      echo "     ☁️ Uploading backup to Discord..."
+      UPLOAD_FILE="$BACKUP_FILE"
+      # Discord webhooks cap file size ~8MB — gzip larger dumps before upload
+      if [ "$(wc -c < "$BACKUP_FILE")" -gt 8000000 ]; then
+        if gzip -c "$BACKUP_FILE" > "$BACKUP_FILE.gz"; then
+          UPLOAD_FILE="$BACKUP_FILE.gz"
+        fi
+      fi
+      if curl -sS -f -o /dev/null -F "file=@$UPLOAD_FILE" "$BACKUP_WEBHOOK_URL" 2>/dev/null; then
+        echo "     ☁️ Backup uploaded to Discord (safe off-VPS)"
+      else
+        echo "     ⚠️ Backup upload failed — local copy still saved"
+      fi
+      rm -f "$BACKUP_FILE.gz"
+    fi
   else
     rm -f "$BACKUP_FILE"
     echo "     ⚠️ WARNING: Backup failed — continuing anyway (data untouched)"

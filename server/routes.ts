@@ -524,8 +524,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/skilling-usd-rate", async (req, res) => {
     try {
       const value = await storage.getTicketSetting('skilling_usd_rate');
+      const mode = (await storage.getTicketSetting('skilling_usd_rate_mode')) || 'manual';
       const rate = value ? (parseFloat(value) || 0.18) : 0.18;
-      res.json({ rate });
+      res.json({ rate, mode: mode === 'auto' ? 'auto' : 'manual' });
     } catch (err: any) {
       console.error('Skilling USD rate fetch error:', err);
       res.status(500).json({ message: err.message || 'Failed to fetch rate' });
@@ -533,14 +534,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // PUT /api/skilling-usd-rate — update the USD price per 1M GP for the skilling calculator
+  // Body: { rate?: number, mode?: 'manual' | 'auto' }
+  // mode 'auto' = rate follows the GP price tracker's sell rate every 30 min
   app.put("/api/skilling-usd-rate", async (req, res) => {
     try {
-      const { rate } = req.body as { rate?: number };
-      if (typeof rate !== 'number' || !isFinite(rate) || rate < 0) {
-        return res.status(400).json({ message: 'Invalid rate — must be a number (e.g. 0.18)' });
+      const { rate, mode } = req.body as { rate?: number; mode?: string };
+      if (mode !== undefined) {
+        if (mode !== 'manual' && mode !== 'auto') {
+          return res.status(400).json({ message: 'Invalid mode — must be "manual" or "auto"' });
+        }
+        await storage.setTicketSetting('skilling_usd_rate_mode', mode);
       }
-      await storage.setTicketSetting('skilling_usd_rate', String(rate));
-      res.json({ success: true, rate });
+      if (rate !== undefined) {
+        if (typeof rate !== 'number' || !isFinite(rate) || rate < 0) {
+          return res.status(400).json({ message: 'Invalid rate — must be a number (e.g. 0.18)' });
+        }
+        await storage.setTicketSetting('skilling_usd_rate', String(rate));
+      }
+      const newValue = await storage.getTicketSetting('skilling_usd_rate');
+      const newMode = (await storage.getTicketSetting('skilling_usd_rate_mode')) || 'manual';
+      res.json({ success: true, rate: newValue ? parseFloat(newValue) : 0.18, mode: newMode === 'auto' ? 'auto' : 'manual' });
     } catch (err: any) {
       console.error('Skilling USD rate update error:', err);
       res.status(500).json({ message: err.message || 'Rate update failed' });

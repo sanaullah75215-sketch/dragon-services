@@ -89,7 +89,7 @@ export default function GpRatesPage() {
     onError: () => toast({ title: "Failed to save channel", variant: "destructive" }),
   });
 
-  const { data: usdRateData } = useQuery<{ rate: number }>({
+  const { data: usdRateData } = useQuery<{ rate: number; mode: string }>({
     queryKey: ["/api/skilling-usd-rate"],
   });
 
@@ -101,6 +101,16 @@ export default function GpRatesPage() {
       setRateInput(null);
     },
     onError: () => toast({ title: "Failed to save USD rate", variant: "destructive" }),
+  });
+
+  const usdModeMutation = useMutation({
+    mutationFn: async (mode: string) => apiRequest("PUT", "/api/skilling-usd-rate", { mode }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/skilling-usd-rate"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/gp-tracker/status"] });
+      toast({ title: "✅ USD rate mode updated" });
+    },
+    onError: () => toast({ title: "Failed to update USD rate mode", variant: "destructive" }),
   });
 
   const createMutation = useMutation({
@@ -351,17 +361,18 @@ export default function GpRatesPage() {
                   type="number"
                   step="0.01"
                   min="0"
+                  disabled={usdRateData?.mode === "auto"}
                   placeholder={usdRateData ? `$${usdRateData.rate.toFixed(2)} per 1M GP` : "0.18"}
                   value={rateInput ?? ""}
                   onChange={e => setRateInput(e.target.value)}
-                  className="bg-slate-700 border-slate-600 text-white placeholder-slate-500 text-sm h-9"
+                  className="bg-slate-700 border-slate-600 text-white placeholder-slate-500 text-sm h-9 disabled:opacity-50"
                 />
                 <Button
                   onClick={() => {
                     const rate = parseFloat(rateInput ?? "");
                     if (!isNaN(rate) && rate >= 0) saveUsdRateMutation.mutate(rate);
                   }}
-                  disabled={!rateInput || isNaN(parseFloat(rateInput)) || saveUsdRateMutation.isPending}
+                  disabled={usdRateData?.mode === "auto" || !rateInput || isNaN(parseFloat(rateInput)) || saveUsdRateMutation.isPending}
                   size="sm"
                   variant="outline"
                   className="border-slate-600 text-slate-300 hover:bg-slate-700 shrink-0"
@@ -371,6 +382,22 @@ export default function GpRatesPage() {
               </div>
               <div className="text-slate-400 text-xs self-center">
                 Current: <span className="text-yellow-400 font-bold">${(usdRateData?.rate ?? 0.18).toFixed(2)}</span> / 1M GP
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 mt-4 pt-3 border-t border-slate-700">
+              <Switch
+                checked={usdRateData?.mode === "auto"}
+                onCheckedChange={(checked) => usdModeMutation.mutate(checked ? "auto" : "manual")}
+                data-testid="switch-usd-auto-sync"
+              />
+              <div>
+                <div className="text-white text-sm font-medium">Auto-sync with GP Price Tracker</div>
+                <div className="text-slate-400 text-xs">
+                  {usdRateData?.mode === "auto"
+                    ? "ON — rate follows the tracker's sell rate (updates every 30 min)"
+                    : "OFF — using the fixed rate above (default $0.18)"}
+                </div>
               </div>
             </div>
           </CardContent>
