@@ -308,7 +308,7 @@ export function createSkillCalculatorEmbed(data: any) {
     }
   };
 
-  const skillIcon = getSkillIcon(skill.name);
+  const skillIcon = data.customSkillIcon || getSkillIcon(skill.name);
   const skillName = skill.name.charAt(0).toUpperCase() + skill.name.slice(1);
 
   // Determine discount info from first method that has it (all share same %)

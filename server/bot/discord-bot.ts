@@ -3677,6 +3677,17 @@ async function handleSkillCalculatorCommand(message: any) {
       // Fall back to default rate if settings lookup fails
     }
 
+    // Prefer custom OSRS skill emojis uploaded to this server (named e.g. osrs_agility)
+    let customSkillIcon: string | null = null;
+    try {
+      const emoji = message.guild?.emojis?.cache?.find(
+        (e: any) => e.name === `osrs_${skill.name.toLowerCase()}`
+      );
+      if (emoji) customSkillIcon = `<:${emoji.name}:${emoji.id}>`;
+    } catch {
+      // No guild emojis available — fall back to Unicode icon
+    }
+
     // Create and send result embed
     const embed = createSkillCalculatorEmbed({
       skill,
@@ -3687,7 +3698,8 @@ async function handleSkillCalculatorCommand(message: any) {
       userRank: userWallet ? getCustomerRank(userWallet.totalSpentGp, userWallet.manualRank) : null,
       totalSpent: userWallet ? userWallet.totalSpentGp : 0,
       discountApplied: discountInfo !== null,
-      usdRatePerM
+      usdRatePerM,
+      customSkillIcon
     });
 
     console.log(`Skill calculator: ${skill.name} with icon: ${skill.icon}`);
