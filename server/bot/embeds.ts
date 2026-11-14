@@ -362,7 +362,7 @@ export function createSkillCalculatorEmbed(data: any) {
   embed.setDescription(description.trim());
 
   embed.setFooter({
-    text: `Total XP Required: ${Math.round(expNeeded).toLocaleString()} • 🐲 Dragon Services`,
+    text: `${data.statsEmoji ? data.statsEmoji + ' ' : ''}Total XP Required: ${Math.round(expNeeded).toLocaleString()} • 🐲 Dragon Services`,
     iconURL: 'https://oldschool.runescape.wiki/images/thumb/4/4e/Dragon_full_helm.png/21px-Dragon_full_helm.png'
   });
 
@@ -467,10 +467,10 @@ function getMethodEmoji(methodName: string): string {
 
 // Quest calculator embed
 export function createQuestCalculatorEmbed(data: any) {
-  const { quest, priceItems, note } = data;
+  const { quest, priceItems, note, questEmoji } = data;
 
   const embed = new EmbedBuilder()
-    .setTitle(`🗡️ ${quest.name} Quest`)
+    .setTitle(`${questEmoji || '🗡️'} ${quest.name} Quest`)
     .setColor(0xFF6B35)
     .setThumbnail('https://oldschool.runescape.wiki/images/thumb/4/4e/Dragon_full_helm.png/130px-Dragon_full_helm.png');
 
@@ -536,7 +536,7 @@ function getServiceEmoji(serviceType: string): string {
 }
 
 // Multi-quest calculator embed
-export function createMultiQuestCalculatorEmbed(questsData: any[]) {
+export function createMultiQuestCalculatorEmbed(questsData: any[], questEmoji?: string | null) {
   const formatGP = (gp: number) => {
     if (gp >= 1000000000) return `${(gp / 1000000000).toFixed(2)}B`;
     if (gp >= 1000000) return `${(gp / 1000000).toFixed(1)}M`;
@@ -545,7 +545,7 @@ export function createMultiQuestCalculatorEmbed(questsData: any[]) {
   };
 
   const embed = new EmbedBuilder()
-    .setTitle(`🧮 Quest Calculator (${questsData.length} Quests)`)
+    .setTitle(`${questEmoji || '🧮'} Quest Calculator (${questsData.length} Quests)`)
     .setColor(0xFF6B35)
     .setThumbnail('https://oldschool.runescape.wiki/images/thumb/4/4e/Dragon_full_helm.png/130px-Dragon_full_helm.png');
 

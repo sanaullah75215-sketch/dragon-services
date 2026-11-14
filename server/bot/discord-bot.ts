@@ -3490,6 +3490,21 @@ async function handleBackToServices(interaction: any) {
   }
 }
 
+// Look up a custom emoji uploaded to the guild by candidate names.
+// Returns `<:name:id>` for use in message/embed text, or null if not found.
+function getGuildEmoji(guild: any, ...names: string[]): string | null {
+  try {
+    const cache = guild?.emojis?.cache;
+    if (!cache) return null;
+    for (const name of names) {
+      if (!name) continue;
+      const emoji = cache.find((e: any) => e.name === name);
+      if (emoji) return `<:${emoji.name}:${emoji.id}>`;
+    }
+  } catch {}
+  return null;
+}
+
 // Skill calculator command handler
 async function handleSkillCalculatorCommand(message: any) {
   try {
@@ -3708,16 +3723,25 @@ async function handleSkillCalculatorCommand(message: any) {
       // Fall back to default rate if settings lookup fails
     }
 
-    // Prefer custom OSRS skill emojis uploaded to this server (named e.g. osrs_agility)
-    let customSkillIcon: string | null = null;
-    try {
-      const emoji = message.guild?.emojis?.cache?.find(
-        (e: any) => e.name === `osrs_${skill.name.toLowerCase()}`
-      );
-      if (emoji) customSkillIcon = `<:${emoji.name}:${emoji.id}>`;
-    } catch {
-      // No guild emojis available — fall back to Unicode icon
-    }
+    // Prefer custom OSRS skill emojis uploaded to this server
+    // Checks: osrs_<skill>, <skill>, and common name variants (e.g. "strenght")
+    const skillLower = skill.name.toLowerCase();
+    const skillEmojiAliases: { [key: string]: string[] } = {
+      strength: ['strenght'],
+      runecrafting: ['runecraft'],
+      hitpoints: ['hp'],
+      hunter: ['hunting'],
+      ranged: ['range'],
+    };
+    const customSkillIcon = getGuildEmoji(
+      message.guild,
+      `osrs_${skillLower}`,
+      skillLower,
+      ...(skillEmojiAliases[skillLower] || [])
+    );
+
+    // Stats emoji for the "Total XP Required" footer
+    const statsEmoji = getGuildEmoji(message.guild, 'stats', 'Stats', 'osrs_stats');
 
     // Create and send result embed
     const embed = createSkillCalculatorEmbed({
@@ -3731,6 +3755,7 @@ async function handleSkillCalculatorCommand(message: any) {
       discountApplied: discountInfo !== null,
       usdRatePerM,
       customSkillIcon,
+      statsEmoji,
       bestRateIndex
     });
 
@@ -3950,7 +3975,10 @@ async function handleQuestCalculatorCommand(message: any) {
 
     // Update command usage
     storage.updateCommandUsage('quest-calculator').catch(() => {});
-    
+
+    // Custom Quest emoji from the server (name: "quest" or "Quest")
+    const questEmoji = getGuildEmoji(message.guild, 'quest', 'Quest', 'quests', 'osrs_quest');
+
     // Create and send result embed
     if (questsWithDiscounts.length === 1) {
       // Single quest - use existing embed
@@ -3958,7 +3986,8 @@ async function handleQuestCalculatorCommand(message: any) {
         ...questsWithDiscounts[0],
         userRank: userWallet ? getCustomerRank(userWallet.totalSpentGp, userWallet.manualRank) : null,
         totalSpent: userWallet ? userWallet.totalSpentGp : 0,
-        discountApplied: userWallet && userWallet.totalSpentGp > 0
+        discountApplied: userWallet && userWallet.totalSpentGp > 0,
+        questEmoji
       };
       const embed = createQuestCalculatorEmbed(questData);
       console.log(`Quest calculator: ${questsWithDiscounts[0].quest.name} with icon: ${questsWithDiscounts[0].quest.icon}`);
@@ -3971,7 +4000,7 @@ async function handleQuestCalculatorCommand(message: any) {
         totalSpent: userWallet ? userWallet.totalSpentGp : 0,
         discountApplied: userWallet && userWallet.totalSpentGp > 0
       };
-      const embed = createMultiQuestCalculatorEmbed(questsWithDiscounts);
+      const embed = createMultiQuestCalculatorEmbed(questsWithDiscounts, questEmoji);
       console.log(`Multi-quest calculator: ${questsWithDiscounts.length} quests calculated`);
       await message.reply({ embeds: [embed] });
     }
