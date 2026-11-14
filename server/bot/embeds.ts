@@ -332,9 +332,12 @@ export function createSkillCalculatorEmbed(data: any) {
     .setTitle(`${skillIcon} ${skillName} Calculator`)
     .setColor(hasDiscount ? 0x57F287 : 0xFF6B35);
 
-  // Build description: Rank / Target Range / Discount on top, then RECOMMENDED (cheapest),
-  // then all other methods — fields would render below the description, so these are text
-  const [recommended, ...others] = methods;
+  // Build description: Rank / Target Range / Discount on top, then RECOMMENDED
+  // (best gp/xp rate), then all other methods in plan order — fields would render
+  // below the description, so these are text
+  // Methods arrive in plan order; bestRateIndex marks the RECOMMENDED one
+  const recommended = methods[typeof data.bestRateIndex === 'number' ? data.bestRateIndex : 0] || methods[0];
+  const others = methods.filter((m: any) => m !== recommended);
 
   let description = `👑 Rank: **${userRank ? userRank.name : 'N/A'}**\n`;
   description += `🎯 Target Range: \`${startLevel} → ${endLevel}\`  •  🎁 Discount: \`${hasDiscount ? discountPercentage : 0}%\`\n\n`;
@@ -342,6 +345,7 @@ export function createSkillCalculatorEmbed(data: any) {
   description += `### ✅ RECOMMENDED\n`;
   description += `**1- ${recommended.method.name}**\n`;
   description += `${methodLine(recommended)}\n`;
+  description += `⭐ Best rate: \`${recommended.gpPerXp} gp/xp\`\n`;
 
   if (others.length > 0) {
     description += `### 📋 ALL METHODS\n`;

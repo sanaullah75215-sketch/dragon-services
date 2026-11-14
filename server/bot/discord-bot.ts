@@ -3576,44 +3576,75 @@ async function handleSkillCalculatorCommand(message: any) {
       // User doesn't have wallet yet, no discount applied
     }
 
-    // Calculate pricing: every method is priced for the FULL requested range
-    // (alternative options), sorted cheapest → most expensive, cheapest = RECOMMENDED
+    // Calculate pricing using each method's configured level range
+    // (overlap with the requested range) — like the classic calculator:
+    // e.g. agility 1-40 → Rooftop A priced for 1-10, Rooftop B for 10-20, etc.
     const methodBreakdown: any[] = [];
 
     for (const method of trainingMethods) {
+      const methodMinLevel = method.minLevel || 1;
+      const methodMaxLevel = method.maxLevel || 99;
+
+      // Overlap between requested range and method's configured range
+      const rangeStart = Math.max(startLevel, methodMinLevel);
+      const rangeEnd = Math.min(endLevel, methodMaxLevel);
+
+      // Skip if there's no overlap
+      if (rangeStart >= rangeEnd) {
+        console.log(`  ⏭️  Skipping ${method.name}: no overlap (method: ${methodMinLevel}-${methodMaxLevel}, requested: ${startLevel}-${endLevel})`);
+        continue;
+      }
+
+      const rangeStartExp = await storage.getExperienceByLevel(rangeStart);
+      const rangeEndExp = await storage.getExperienceByLevel(rangeEnd);
+
+      if (rangeStartExp === null || rangeStartExp === undefined || rangeEndExp === null || rangeEndExp === undefined) {
+        console.log(`  ⚠️  Could not get XP for range ${rangeStart}-${rangeEnd}`);
+        continue;
+      }
+
+      const rangeExpNeeded = rangeEndExp - rangeStartExp;
+      if (rangeExpNeeded <= 0) {
+        console.log(`  ⏭️  Skipping ${method.name}: 0 XP (Levels ${rangeStart}-${rangeEnd})`);
+        continue;
+      }
+
       const gpPerXp = parseFloat(method.gpPerXp);
       if (!isFinite(gpPerXp) || gpPerXp <= 0) {
         console.log(`  ⏭️  Skipping ${method.name}: invalid gp/xp (${method.gpPerXp})`);
         continue;
       }
 
-      const rangeCost = expNeeded * gpPerXp;
-      const rangeHours = expNeeded / (method.xpPerHour || 50000);
+      const rangeCost = rangeExpNeeded * gpPerXp;
+      const rangeHours = rangeExpNeeded / (method.xpPerHour || 50000);
 
-      console.log(`  📈 ${method.name}: Levels ${startLevel}-${endLevel}`);
-      console.log(`    XP Needed: ${expNeeded.toLocaleString()}`);
+      console.log(`  📈 ${method.name}: Levels ${rangeStart}-${rangeEnd}`);
+      console.log(`    XP Needed: ${rangeExpNeeded.toLocaleString()}`);
       console.log(`    GP/XP: ${gpPerXp}`);
       console.log(`    Cost: ${rangeCost.toLocaleString()} GP`);
 
       methodBreakdown.push({
         method,
-        levelRange: `${startLevel}-${endLevel}`,
-        rangeStart: startLevel,
-        rangeEnd: endLevel,
-        expNeeded,
+        levelRange: `${rangeStart}-${rangeEnd}`,
+        rangeStart,
+        rangeEnd,
+        expNeeded: rangeExpNeeded,
         gpPerXp,
         originalCost: rangeCost,
         estimatedHours: rangeHours
       });
     }
 
-    // Cheapest first — first entry becomes the RECOMMENDED method
-    methodBreakdown.sort((a, b) => a.originalCost - b.originalCost);
+    // Keep the configured plan order (methods chain by level range).
+    // RECOMMENDED = the method with the best (lowest) gp/xp rate.
+    const bestRateIndex = methodBreakdown.reduce(
+      (bestIdx, m, idx, arr) => (m.gpPerXp < arr[bestIdx].gpPerXp ? idx : bestIdx), 0
+    );
     
     // Check if no methods were found
     if (methodBreakdown.length === 0) {
-      await message.reply(`❌ **No valid training methods found!**\n\n` +
-        `No training methods with valid pricing are configured for ${skill.name}.\n` +
+      await message.reply(`❌ **No applicable training methods found!**\n\n` +
+        `No training methods are configured for ${skill.name} that cover levels ${startLevel}-${endLevel}.\n` +
         `Please contact an admin to add training methods for this skill.`);
       return;
     }
@@ -3699,7 +3730,8 @@ async function handleSkillCalculatorCommand(message: any) {
       totalSpent: userWallet ? userWallet.totalSpentGp : 0,
       discountApplied: discountInfo !== null,
       usdRatePerM,
-      customSkillIcon
+      customSkillIcon,
+      bestRateIndex
     });
 
     console.log(`Skill calculator: ${skill.name} with icon: ${skill.icon}`);
