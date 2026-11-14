@@ -324,7 +324,8 @@ export function createSkillCalculatorEmbed(data: any) {
     const cost = hasDiscount && m.discountAmount > 0
       ? `~~${formatGP(m.originalCost)}~~ 💰 \`${formatGP(m.totalCost)} GP\``
       : `💰 \`${formatGP(m.totalCost)} GP\``;
-    return `\`${m.levelRange}\` • \`${Math.round(m.expNeeded).toLocaleString()} XP\`\n` +
+    const xpLabel = `${data.statsEmoji ? data.statsEmoji + ' ' : ''}\`${Math.round(m.expNeeded).toLocaleString()} XP\``;
+    return `\`${m.levelRange}\` • ${xpLabel}\n` +
            `${cost} • ≈ \`${formatUSD(m.totalCost)} USD\``;
   };
 
@@ -362,7 +363,7 @@ export function createSkillCalculatorEmbed(data: any) {
   embed.setDescription(description.trim());
 
   embed.setFooter({
-    text: `${data.statsEmoji ? data.statsEmoji + ' ' : ''}Total XP Required: ${Math.round(expNeeded).toLocaleString()} • 🐲 Dragon Services`,
+    text: `Total XP Required: ${Math.round(expNeeded).toLocaleString()} • 🐲 Dragon Services`,
     iconURL: 'https://oldschool.runescape.wiki/images/thumb/4/4e/Dragon_full_helm.png/21px-Dragon_full_helm.png'
   });
 
