@@ -3676,10 +3676,112 @@ async function handleSkillCalculatorCommand(message: any) {  try {
     }
 
     // Keep the configured plan order (methods chain by level range).
-    // RECOMMENDED = the method with the best (lowest) gp/xp rate.
+    // bestRateIndex = best (lowest) gp/xp single method, used as fallback
+    // when no single set of methods covers the full range.
     const bestRateIndex = methodBreakdown.reduce(
       (bestIdx, m, idx, arr) => (m.gpPerXp < arr[bestIdx].gpPerXp ? idx : bestIdx), 0
     );
+
+    // ── Cheapest COMPLETE plan (covers the FULL requested range) ───────────
+    // Methods may only cover sub-ranges (e.g. agility rooftops 70-80, 80-90),
+    // so recommending the single lowest-rate method is wrong. Instead we find
+    // the cheapest chain of methods that together covers startLevel→endLevel
+    // (small dynamic program over the level boundaries where coverage changes).
+    const boundarySet = new Set<number>([startLevel, endLevel]);
+    for (const m of methodBreakdown) {
+      boundarySet.add(Math.max(startLevel, m.method.minLevel || 1));
+      boundarySet.add(Math.min(endLevel, m.method.maxLevel || 99));
+    }
+    const boundaries = Array.from(boundarySet).sort((a, b) => a - b);
+
+    // XP at each boundary level
+    const xpAt = new Map<number, number>();
+    let xpLookupFailed = false;
+    for (const lvl of boundaries) {
+      const xp = await storage.getExperienceByLevel(lvl);
+      if (xp === null || xp === undefined) {
+        xpLookupFailed = true;
+        break;
+      }
+      xpAt.set(lvl, xp);
+    }
+
+    let planSteps: any[] = [];
+
+    if (!xpLookupFailed && boundaries.length >= 2) {
+      // dp[i] = cheapest cost to reach boundaries[i] from boundaries[0]
+      const INF = Infinity;
+      const dp: number[] = boundaries.map(() => INF);
+      const parent: ({ prev: number; methodIdx: number } | null)[] = boundaries.map(() => null);
+      dp[0] = 0;
+
+      for (let i = 0; i < boundaries.length; i++) {
+        if (dp[i] === INF) continue;
+        for (let j = i + 1; j < boundaries.length; j++) {
+          // Cheapest method fully covering [boundaries[i], boundaries[j]]
+          let bestMethodIdx = -1;
+          let bestCost = INF;
+          for (let k = 0; k < methodBreakdown.length; k++) {
+            const m = methodBreakdown[k];
+            if (m.rangeStart <= boundaries[i] && m.rangeEnd >= boundaries[j]) {
+              const xpDelta = (xpAt.get(boundaries[j]) ?? 0) - (xpAt.get(boundaries[i]) ?? 0);
+              if (xpDelta <= 0) continue;
+              const cost = xpDelta * m.gpPerXp;
+              if (cost < bestCost) {
+                bestCost = cost;
+                bestMethodIdx = k;
+              }
+            }
+          }
+          if (bestMethodIdx >= 0 && dp[i] + bestCost < dp[j]) {
+            dp[j] = dp[i] + bestCost;
+            parent[j] = { prev: i, methodIdx: bestMethodIdx };
+          }
+        }
+      }
+
+      if (dp[boundaries.length - 1] !== INF) {
+        // Reconstruct the cheapest path, then merge adjacent steps that use
+        // the same method (e.g. one method covering 70-90 in a single step)
+        const rawPath: { methodIdx: number; from: number; to: number }[] = [];
+        let cur = boundaries.length - 1;
+        while (cur > 0) {
+          const p = parent[cur]!;
+          rawPath.push({ methodIdx: p.methodIdx, from: boundaries[p.prev], to: boundaries[cur] });
+          cur = p.prev;
+        }
+        rawPath.reverse();
+
+        for (const step of rawPath) {
+          const m = methodBreakdown[step.methodIdx];
+          const last = planSteps[planSteps.length - 1];
+          if (last && last.method.id === m.method.id && last.rangeEnd === step.from) {
+            // Extend the previous step instead of adding a new one
+            last.rangeEnd = step.to;
+            const endExp = xpAt.get(step.to) ?? 0;
+            last.expNeeded = endExp - (xpAt.get(last.rangeStart) ?? 0);
+            last.originalCost = last.expNeeded * last.gpPerXp;
+            last.estimatedHours = last.expNeeded / (last.method.xpPerHour || 50000);
+          } else {
+            const startExp = xpAt.get(step.from) ?? 0;
+            const endExp = xpAt.get(step.to) ?? 0;
+            planSteps.push({
+              method: m.method,
+              levelRange: `${step.from}-${step.to}`,
+              rangeStart: step.from,
+              rangeEnd: step.to,
+              expNeeded: endExp - startExp,
+              gpPerXp: m.gpPerXp,
+              originalCost: (endExp - startExp) * m.gpPerXp,
+              estimatedHours: (endExp - startExp) / (m.method.xpPerHour || 50000)
+            });
+          }
+        }
+      }
+    }
+
+    const hasCompletePlan = planSteps.length > 0;
+
     
     // Check if no methods were found
     if (methodBreakdown.length === 0) {
@@ -3689,9 +3791,12 @@ async function handleSkillCalculatorCommand(message: any) {  try {
       return;
     }
 
-    // Sum of all method costs (used for discount proportions)
-    const totalOriginalCost = methodBreakdown.reduce((sum, m) => sum + m.originalCost, 0);
-    
+    // Totals: prefer the cheapest complete plan; fall back to all-methods sum
+    // when the configured methods don't cover the full requested range
+    const allMethodsOriginalTotal = methodBreakdown.reduce((sum, m) => sum + m.originalCost, 0);
+    const planTotalGp = planSteps.reduce((sum, s) => sum + s.originalCost, 0);
+    const totalOriginalCost = hasCompletePlan ? planTotalGp : allMethodsOriginalTotal;
+
     // Apply customer rank discount to total cost
     let finalTotalCost = totalOriginalCost;
     let discountAmount = 0;
@@ -3711,15 +3816,33 @@ async function handleSkillCalculatorCommand(message: any) {  try {
       console.log(`  💰 Total Cost: ${totalOriginalCost.toLocaleString()} GP (no discount)`);
     }
     
-    // Apply discount proportionally to each method's cost
-    // Use Math.floor to avoid rounding issues, and apply remaining to last method
-    let remainingDiscount = discountAmount;
-    const methodCalculations = methodBreakdown.map((breakdown, index) => {
-      const isLast = index === methodBreakdown.length - 1;
-      const proportion = breakdown.originalCost / totalOriginalCost;
-      const methodDiscount = isLast ? remainingDiscount : Math.floor(discountAmount * proportion);
-      remainingDiscount -= methodDiscount;
-      const methodFinalCost = breakdown.originalCost - methodDiscount;
+    // Plan steps share the plan's total discount exactly (proportional with
+    // the remainder on the last step so the plan total stays consistent)
+    let remainingPlanDiscount = discountAmount;
+    const planCalculations = planSteps.map((step, index) => {
+      const isLast = index === planSteps.length - 1;
+      const proportion = planTotalGp > 0 ? step.originalCost / planTotalGp : 0;
+      const stepDiscount = isLast ? remainingPlanDiscount : Math.floor(discountAmount * proportion);
+      remainingPlanDiscount -= stepDiscount;
+      
+      return {
+        method: step.method,
+        levelRange: step.levelRange,
+        rangeStart: step.rangeStart,
+        rangeEnd: step.rangeEnd,
+        expNeeded: step.expNeeded,
+        gpPerXp: step.gpPerXp,
+        originalCost: step.originalCost,
+        totalCost: step.originalCost - stepDiscount,
+        discountAmount: stepDiscount,
+        discountPercentage,
+        estimatedHours: step.estimatedHours
+      };
+    });
+
+    // ALL METHODS list: same percentage applied per item (display only)
+    const methodCalculations = methodBreakdown.map((breakdown) => {
+      const methodDiscount = Math.floor(breakdown.originalCost * discountPercentage / 100);
       
       return {
         method: breakdown.method,
@@ -3729,7 +3852,7 @@ async function handleSkillCalculatorCommand(message: any) {  try {
         expNeeded: breakdown.expNeeded,
         gpPerXp: breakdown.gpPerXp,
         originalCost: breakdown.originalCost,
-        totalCost: methodFinalCost,
+        totalCost: breakdown.originalCost - methodDiscount,
         discountAmount: methodDiscount,
         discountPercentage,
         estimatedHours: breakdown.estimatedHours
@@ -3769,7 +3892,11 @@ async function handleSkillCalculatorCommand(message: any) {  try {
       usdRatePerM,
       customSkillIcon,
       statsEmoji,
-      bestRateIndex
+      bestRateIndex,
+      planSteps: planCalculations,
+      planTotalGp,
+      planFinalGp: finalTotalCost,
+      hasCompletePlan
     });
 
     console.log(`Skill calculator: ${skill.name} with icon: ${skill.icon}`);

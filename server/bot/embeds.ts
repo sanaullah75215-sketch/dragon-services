@@ -333,25 +333,43 @@ export function createSkillCalculatorEmbed(data: any) {
     .setTitle(`${skillIcon} ${skillName} Calculator`)
     .setColor(hasDiscount ? 0x57F287 : 0xFF6B35);
 
-  // Build description: Rank / Target Range / Discount on top, then RECOMMENDED
-  // (best gp/xp rate), then all other methods in plan order — fields would render
-  // below the description, so these are text
-  // Methods arrive in plan order; bestRateIndex marks the RECOMMENDED one
+  // Build description: Rank / Target Range / Discount on top, then RECOMMENDED,
+  // then ALL METHODS — fields would render below the description, so these are text
+  const hasCompletePlan = Array.isArray(data.planSteps) && data.planSteps.length > 0;
+  const planSteps: any[] = hasCompletePlan ? data.planSteps : [];
+  const planTotalGp = typeof data.planTotalGp === 'number' ? data.planTotalGp : 0;
+  const planFinalGp = typeof data.planFinalGp === 'number' ? data.planFinalGp : planTotalGp;
+
   const recommended = methods[typeof data.bestRateIndex === 'number' ? data.bestRateIndex : 0] || methods[0];
-  const others = methods.filter((m: any) => m !== recommended);
 
   let description = `👑 Rank: **${userRank ? userRank.name : 'N/A'}**\n`;
   description += `🎯 Target Range: **${startLevel} → ${endLevel}**  •  🎁 Discount: **${hasDiscount ? discountPercentage : 0}%**\n\n`;
 
   description += `### ✅ RECOMMENDED\n`;
-  description += `**1- ${recommended.method.name}**\n`;
-  description += `${methodLine(recommended)}\n`;
-  description += `⭐ Best rate: \`${recommended.gpPerXp} gp/xp\`\n`;
+  if (hasCompletePlan) {
+    // Cheapest chain of methods covering the FULL requested range
+    planSteps.forEach((m: any, i: number) => {
+      description += `**${i + 1}- ${m.method.name}**\n`;
+      description += `${methodLine(m)}\n`;
+    });
+    const planRate = expNeeded > 0 ? planTotalGp / expNeeded : 0;
+    description += `⭐ Cheapest complete plan: \`${planRate.toFixed(2)} gp/xp avg\`\n`;
+    const planCostLine = hasDiscount && planFinalGp < planTotalGp
+      ? `~~${formatGP(planTotalGp)}~~ 💵 **${formatGP(planFinalGp)} GP**`
+      : `💵 **${formatGP(planFinalGp)} GP**`;
+    description += `> ${planCostLine} • ≈ **${formatUSD(planFinalGp)} USD** Plan Total\n\n`;
+  } else {
+    // Fallback: single method with the best gp/xp rate
+    description += `**1- ${recommended.method.name}**\n`;
+    description += `${methodLine(recommended)}\n`;
+    description += `⭐ Best rate: \`${recommended.gpPerXp} gp/xp\`\n\n`;
+  }
 
-  if (others.length > 0) {
+  // ALL METHODS: every configured method overlapping the requested range
+  if (methods.length > 0) {
     description += `### 📋 ALL METHODS\n`;
-    others.forEach((m: any, i: number) => {
-      description += `**${i + 2}- ${m.method.name}**\n`;
+    methods.forEach((m: any, i: number) => {
+      description += `**${i + 1}- ${m.method.name}**\n`;
       description += `${methodLine(m)}\n\n`;
     });
   }
