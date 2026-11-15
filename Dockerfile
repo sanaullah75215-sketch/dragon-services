@@ -10,12 +10,12 @@ RUN npm install
 
 COPY . .
 
-# Build the Sythe extension zip for dashboard download
+# Build the Sythe + Eldorado extension zips for dashboard download
 RUN node -e " \
 const fs=require('fs'),path=require('path'),zlib=require('zlib'); \
-const folder='/app/sythe-extension'; \
-if(!fs.existsSync(folder)){process.exit(0);} \
-const files=fs.readdirSync(folder).map(f=>({name:'sythe-extension/'+f,data:fs.readFileSync(path.join(folder,f))})); \
+function buildZip(folder,outName){ \
+if(!fs.existsSync(folder)){console.log('skip '+outName);return;} \
+const files=fs.readdirSync(folder).map(f=>({name:path.basename(folder)+'/'+f,data:fs.readFileSync(path.join(folder,f))})); \
 const bufs=[],cd=[]; let off=0; \
 function u16(n){const b=Buffer.alloc(2);b.writeUInt16LE(n);return b;} \
 function u32(n){const b=Buffer.alloc(4);b.writeUInt32LE(n);return b;} \
@@ -27,9 +27,11 @@ cd.push({nb,cr,cs:cp.length,us:f.data.length,off,dt,dd});bufs.push(lh,cp);off+=l
 const cs=off; \
 for(const e of cd){const ch=Buffer.concat([Buffer.from([0x50,0x4B,0x01,0x02]),u16(20),u16(20),u16(0),u16(8),u16(e.dt),u16(e.dd),u32(e.cr),u32(e.cs),u32(e.us),u16(e.nb.length),u16(0),u16(0),u16(0),u16(0),u32(0),u32(e.off),e.nb]);bufs.push(ch);off+=ch.length;} \
 const er=Buffer.concat([Buffer.from([0x50,0x4B,0x05,0x06]),u16(0),u16(0),u16(cd.length),u16(cd.length),u32(off-cs),u32(cs),u16(0)]);bufs.push(er); \
-fs.mkdirSync('/app/client/public',{recursive:true}); \
-fs.writeFileSync('/app/client/public/sythe-extension.zip',Buffer.concat(bufs)); \
-console.log('Sythe extension zip built successfully'); \
+fs.writeFileSync('/app/client/public/'+outName,Buffer.concat(bufs)); \
+console.log(outName+' built'); \
+} \
+buildZip('/app/sythe-extension','sythe-extension.zip'); \
+buildZip('/app/eldorado-extension','eldorado-extension.zip'); \
 "
 
 RUN npm run build

@@ -244,6 +244,28 @@ export default function Home() {
             </a>
           </div>
         </Card>
+
+        <Card className="p-4 sm:p-6 border-primary/30 bg-primary/5 mt-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center flex-shrink-0">
+                <Download className="h-5 w-5 text-primary-foreground" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-foreground">Eldorado Vouch Chrome Extension</h3>
+                <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
+                  Posts your Eldorado vouch summary (total vouches, rating, latest reviews) to Discord with one click. Open your Eldorado reviews page in Chrome, click the extension, and it handles the rest.
+                </p>
+              </div>
+            </div>
+            <a href="/eldorado-extension.zip" download="eldorado-extension.zip" className="shrink-0">
+              <Button className="w-full sm:w-auto gap-2">
+                <Download className="h-4 w-4" />
+                Download Extension
+              </Button>
+            </a>
+          </div>
+        </Card>
       </div>
 
       {/* Instructions Section */}

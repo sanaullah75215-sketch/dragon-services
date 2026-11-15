@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "Dragon Services - Eldorado Vouch Poster",
+  "version": "1.0",
+  "description": "Reads your Eldorado.gg reviews and posts a consolidated vouch summary (total vouches, rating %, latest reviews) to your Discord channel.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://www.eldorado.gg/*",
+    "https://discord.com/*",
+    "https://discordapp.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://www.eldorado.gg/users/*/reviews*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Dragon Services Eldorado Vouch Poster"
+  }
+}
