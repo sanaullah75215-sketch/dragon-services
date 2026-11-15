@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { startDiscordBot, getBotStatus, client } from "./bot/discord-bot";
+import { createOfferAnnouncementEmbed, createOfferAnnouncementButtons } from "./bot/offers-embeds";
 import { insertServiceSchema, insertUserInteractionSchema, insertSpecialOfferSchema, insertUserWalletSchema, insertWalletTransactionSchema, insertPaymentMethodSchema, insertGpRateSchema } from "@shared/schema";
 import { getTrackerStatus, runPriceCheck, calculateRates } from './bot/gp-price-tracker';
 import ExcelJS from 'exceljs';
@@ -354,6 +355,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Error creating special offer:', error);
       res.status(500).json({ message: 'Failed to create special offer' });
+    }
+  });
+
+  // GET /api/offers-channel — saved announcement channel for offers
+  app.get("/api/offers-channel", async (req, res) => {
+    try {
+      const channelId = await storage.getTicketSetting('offers_channel');
+      res.json({ channelId: channelId || '' });
+    } catch (error) {
+      console.error('Error fetching offers channel:', error);
+      res.status(500).json({ message: 'Failed to fetch offers channel' });
+    }
+  });
+
+  // PUT /api/offers-channel — save the offers announcement channel
+  app.put("/api/offers-channel", async (req, res) => {
+    try {
+      const { channelId } = req.body as { channelId?: string };
+      await storage.setTicketSetting('offers_channel', channelId || '');
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error saving offers channel:', error);
+      res.status(500).json({ message: 'Failed to save offers channel' });
+    }
+  });
+
+  // POST /api/offers/:id/post — announce an offer to Discord (Dragon style embed + claim buttons)
+  app.post("/api/offers/:id/post", async (req, res) => {
+    try {
+      const offer = await storage.getSpecialOffer(req.params.id);
+      if (!offer) {
+        return res.status(404).json({ message: 'Special offer not found' });
+      }
+
+      const body = (req.body || {}) as { channelId?: string };
+      const channelId = body.channelId || await storage.getTicketSetting('offers_channel');
+      if (!channelId) {
+        return res.status(400).json({ message: 'No announcement channel set — set it at the top of the Special Offers page first' });
+      }
+
+      if (!client || !client.isReady()) {
+        return res.status(503).json({ message: 'Bot is not online — cannot post right now' });
+      }
+
+      const channel = await client.channels.fetch(channelId).catch(() => null) as TextChannel | null;
+      if (!channel || typeof channel.send !== 'function') {
+        return res.status(400).json({ message: 'Channel not found or not a text channel' });
+      }
+
+      const embed = createOfferAnnouncementEmbed(offer);
+      const row = createOfferAnnouncementButtons(offer);
+      await channel.send({ embeds: [embed], components: [row] });
+
+      console.log(`💎 Offer "${offer.title}" posted to channel ${channelId}`);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('Error posting offer:', error);
+      res.status(500).json({ message: error.message || 'Failed to post offer' });
     }
   });
 

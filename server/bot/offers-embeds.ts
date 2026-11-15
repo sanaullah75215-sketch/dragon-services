@@ -214,6 +214,76 @@ export function createOfferActionButtons(offer: SpecialOffer) {
     .addComponents(claimButton, backButton, contactButton);
 }
 
+export function createOfferAnnouncementButtons(offer: SpecialOffer) {
+  const claimButton = new ButtonBuilder()
+    .setLabel('🔥 Claim This Deal')
+    .setStyle(ButtonStyle.Primary)
+    .setCustomId(`claim_offer_${offer.id}`);
+
+  const contactButton = new ButtonBuilder()
+    .setLabel('💬 Contact Support')
+    .setStyle(ButtonStyle.Success)
+    .setCustomId(`contact_offer_${offer.id}`);
+
+  return new ActionRowBuilder<ButtonBuilder>()
+    .addComponents(claimButton, contactButton);
+}
+
+// ── Dashboard announcement embed ("Dragon style") ─────────────────────────────
+// Used by POST /api/offers/:id/post to announce an offer to a channel
+export function createOfferAnnouncementEmbed(offer: SpecialOffer) {
+  const typeEmoji = getOfferTypeEmoji(offer.offerType);
+
+  const embed = new EmbedBuilder()
+    .setTitle(`${typeEmoji} ${offer.title}`)
+    .setColor(0xFF6B35) // Dragon fire orange
+    .setThumbnail('https://oldschool.runescape.wiki/images/thumb/4/4e/Dragon_full_helm.png/130px-Dragon_full_helm.png');
+
+  let description = '';
+
+  // Discount headline
+  if (offer.discountPercentage) {
+    description += `## 🏷️ ${offer.discountPercentage}% OFF\n\n`;
+  } else if (offer.discountAmount) {
+    description += `## 🏷️ ${offer.discountAmount}\n\n`;
+  }
+
+  description += `${offer.description}\n`;
+
+  // Pricing: multi-item or legacy single price
+  if (offer.items && Array.isArray(offer.items) && offer.items.length > 0) {
+    description += `\n💰 **Deal Pricing:**\n`;
+    for (const item of offer.items) {
+      description += `• **${item.serviceName}**: ~~${item.originalPrice}~~ → **${item.salePrice}**\n`;
+    }
+  } else if (offer.originalPrice && offer.salePrice) {
+    description += `\n💰 ~~${offer.originalPrice}~~ → **${offer.salePrice}**\n`;
+  } else if (offer.salePrice) {
+    description += `\n💰 **${offer.salePrice}**\n`;
+  }
+
+  // Category + expiry countdown
+  const categoryInfo = getCategoryInfo(offer.category);
+  description += `\n📁 **Category:** ${categoryInfo.emoji} ${categoryInfo.name}\n`;
+  if (offer.expiresAt) {
+    description += `⏰ **Ends:** <t:${Math.floor(new Date(offer.expiresAt).getTime() / 1000)}:R>\n`;
+  }
+
+  embed.setDescription(description.trim());
+
+  if (offer.imageUrl) {
+    embed.setImage(offer.imageUrl);
+  }
+
+  embed.setFooter({
+    text: '🐲 Dragon Services • Limited time — claim before it\'s gone!',
+    iconURL: 'https://oldschool.runescape.wiki/images/thumb/4/4e/Dragon_full_helm.png/21px-Dragon_full_helm.png'
+  });
+  embed.setTimestamp();
+
+  return embed;
+}
+
 // Helper functions for offers
 function getOfferTypeEmoji(offerType: string): string {
   switch (offerType.toLowerCase()) {

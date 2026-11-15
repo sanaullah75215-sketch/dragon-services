@@ -11,7 +11,7 @@ import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Plus, Edit2, Trash2, DollarSign, Calendar, Percent, Zap, Gift, X, Eye } from 'lucide-react';
+import { Plus, Edit2, Trash2, DollarSign, Calendar, Percent, Zap, Gift, X, Eye, Megaphone } from 'lucide-react';
 import { apiRequest } from '@/lib/queryClient';
 import type { SpecialOffer, InsertSpecialOffer } from '@shared/schema';
 
@@ -20,10 +20,41 @@ export default function SpecialOffersPage() {
   const queryClient = useQueryClient();
   const [editingOffer, setEditingOffer] = useState<SpecialOffer | null>(null);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [channelInput, setChannelInput] = useState("");
 
   // Fetch special offers
   const { data: offers = [], isLoading } = useQuery<SpecialOffer[]>({
     queryKey: ['/api/offers'],
+  });
+
+  // Saved announcement channel
+  const { data: channelData } = useQuery<{ channelId: string }>({
+    queryKey: ['/api/offers-channel'],
+  });
+
+  const saveChannelMutation = useMutation({
+    mutationFn: async (channelId: string) => apiRequest('PUT', '/api/offers-channel', { channelId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/offers-channel'] });
+      toast({ title: '✅ Announcement channel saved' });
+      setChannelInput('');
+    },
+    onError: () => toast({ title: 'Failed to save channel', variant: 'destructive' }),
+  });
+
+  const postOfferMutation = useMutation({
+    mutationFn: async (offerId: string) => apiRequest('POST', `/api/offers/${offerId}/post`, {}),
+    onSuccess: () => {
+      toast({ title: '📢 Offer posted to Discord!', description: 'Check the announcement channel.' });
+    },
+    onError: async (error: any) => {
+      let errorMessage = 'Failed to post offer';
+      try {
+        const errorData = await error.json();
+        errorMessage = errorData.message || errorMessage;
+      } catch {}
+      toast({ title: errorMessage, variant: 'destructive' });
+    },
   });
 
   // Create offer mutation
@@ -136,6 +167,34 @@ export default function SpecialOffersPage() {
         </Dialog>
       </div>
 
+      {/* ── Announcement channel config ─────────────────────────────── */}
+      <Card className="mb-6">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">📢 Offers Announcement Channel</CardTitle>
+          <CardDescription>
+            Where "Post to Discord" sends offer announcements. Right-click a channel → Copy Channel ID.
+            {channelData?.channelId && (
+              <span className="ml-1 font-medium">Currently: <code>{channelData.channelId}</code></span>
+            )}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex gap-2 max-w-xl">
+            <Input
+              placeholder={channelData?.channelId ? `Current: ${channelData.channelId}` : 'Discord channel ID for offer announcements'}
+              value={channelInput}
+              onChange={(e) => setChannelInput(e.target.value)}
+            />
+            <Button
+              onClick={() => saveChannelMutation.mutate(channelInput)}
+              disabled={!channelInput || saveChannelMutation.isPending}
+            >
+              Save Channel
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {(offers as SpecialOffer[]).map((offer: SpecialOffer) => (
           <Card key={offer.id} className="relative" data-testid={`card-offer-${offer.id}`}>
@@ -199,6 +258,16 @@ export default function SpecialOffersPage() {
             </CardContent>
 
             <CardFooter className="flex gap-2">
+              <Button 
+                size="sm"
+                onClick={() => postOfferMutation.mutate(offer.id)}
+                disabled={postOfferMutation.isPending}
+                data-testid={`button-post-${offer.id}`}
+              >
+                <Megaphone className="h-4 w-4 mr-1" />
+                Post to Discord
+              </Button>
+
               <Dialog>
                 <DialogTrigger asChild>
                   <Button variant="outline" size="sm" data-testid={`button-edit-${offer.id}`}>
