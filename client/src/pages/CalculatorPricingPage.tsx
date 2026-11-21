@@ -59,6 +59,7 @@ function formatGpInput(gp: string | number): string {
 const EMPTY_FORM: InsertCalculatorPricing = {
   type: 'boss',
   name: '',
+  groupName: '',
   aliases: '',
   unit: 'per_kill',
   priceGp: '',
@@ -122,6 +123,7 @@ export default function CalculatorPricingPage() {
     setForm({
       type: item.type,
       name: item.name,
+      groupName: item.groupName ?? '',
       aliases: item.aliases ?? '',
       unit: item.unit,
       priceGp: formatGpInput(item.priceGp),
@@ -160,15 +162,26 @@ export default function CalculatorPricingPage() {
       <div className="grid gap-2">
         <Label>Name</Label>
         <Input
-          placeholder="e.g. Zulrah, Fire Cape, Barbarian Assault"
+          placeholder="e.g. CG (99 Max), CG (Starter), Zulrah"
           value={form.name}
           onChange={(e) => setForm({ ...form, name: e.target.value })}
         />
       </div>
       <div className="grid gap-2">
+        <Label>Group / Category (optional, for tiers)</Label>
+        <Input
+          placeholder="e.g. Chambers of Xeric, Theatre of Blood"
+          value={form.groupName ?? ''}
+          onChange={(e) => setForm({ ...form, groupName: e.target.value })}
+        />
+        <p className="text-xs text-muted-foreground">
+          Same group name = shown together in Discord (e.g. different CG tiers/stats).
+        </p>
+      </div>
+      <div className="grid gap-2">
         <Label>Aliases (comma-separated short names)</Label>
         <Input
-          placeholder="e.g. zul, snake boss"
+          placeholder="e.g. cg, cox, raids1"
           value={form.aliases ?? ''}
           onChange={(e) => setForm({ ...form, aliases: e.target.value })}
         />
@@ -236,11 +249,25 @@ export default function CalculatorPricingPage() {
   const renderTypeTab = (type: string) => {
     const meta = TYPE_META[type];
     const typeItems = items.filter(i => i.type === type);
+
+    // Group by groupName (or "Ungrouped")
+    const groups = new Map<string, CalculatorPricing[]>();
+    for (const item of typeItems) {
+      const key = (item.groupName || '').trim() || '__ungrouped__';
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(item);
+    }
+    const groupEntries = Array.from(groups.entries()).sort((a, b) => {
+      if (a[0] === '__ungrouped__') return 1;
+      if (b[0] === '__ungrouped__') return -1;
+      return a[0].localeCompare(b[0]);
+    });
+
     return (
       <TabsContent value={type}>
         <div className="flex justify-between items-center mb-4">
           <p className="text-sm text-muted-foreground">
-            Prices for the <code>{meta.command}</code> command. Priced {meta.unitHint}.
+            Prices for the <code>{meta.command}</code> command. Priced {meta.unitHint}. Use the same <strong>Group</strong> name for tiers (e.g. CG 99 Max / CG Starter).
           </p>
           <Button size="sm" onClick={() => openCreate(type)}>
             <Plus className="h-4 w-4 mr-1" /> Add {meta.label.replace(/s$/, '')}
@@ -256,39 +283,49 @@ export default function CalculatorPricingPage() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid gap-3">
-            {typeItems.map(item => (
-              <Card key={item.id} className="py-3">
-                <CardContent className="px-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-semibold">{item.name}</span>
-                        <Badge variant="outline">{UNIT_LABELS[item.unit] || item.unit}</Badge>
-                        {!item.isActive && <Badge variant="secondary">Inactive</Badge>}
+          <div className="space-y-4">
+            {groupEntries.map(([groupName, groupItems]) => (
+              <Card key={groupName}>
+                {groupName !== '__ungrouped__' && (
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">{groupName}</CardTitle>
+                    <CardDescription>{groupItems.length} tier(s) — shown together in Discord</CardDescription>
+                  </CardHeader>
+                )}
+                <CardContent className={groupName !== '__ungrouped__' ? 'pt-0' : 'py-4'}>
+                  <div className="grid gap-3">
+                    {groupItems.map(item => (
+                      <div key={item.id} className="flex items-center justify-between gap-3 border rounded-md p-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-semibold">{item.name}</span>
+                            <Badge variant="outline">{UNIT_LABELS[item.unit] || item.unit}</Badge>
+                            {!item.isActive && <Badge variant="secondary">Inactive</Badge>}
+                          </div>
+                          <div className="text-sm text-muted-foreground mt-1">
+                            💰 <span className="font-semibold text-foreground">{formatGP(item.priceGp)} GP</span>
+                            {item.aliases && <> • aka {item.aliases}</>}
+                          </div>
+                          {item.description && (
+                            <p className="text-xs text-muted-foreground mt-1 line-clamp-2 whitespace-pre-line">{item.description}</p>
+                          )}
+                        </div>
+                        <div className="flex gap-2 shrink-0">
+                          <Button variant="outline" size="sm" onClick={() => openEdit(item)}>
+                            <Edit2 className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => {
+                              if (confirm(`Delete "${item.name}"?`)) deleteMutation.mutate(item.id);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
-                      <div className="text-sm text-muted-foreground mt-1">
-                        💰 <span className="font-semibold text-foreground">{formatGP(item.priceGp)} GP</span>
-                        {item.aliases && <> • aka {item.aliases}</>}
-                      </div>
-                      {item.description && (
-                        <p className="text-xs text-muted-foreground mt-1 line-clamp-2 whitespace-pre-line">{item.description}</p>
-                      )}
-                    </div>
-                    <div className="flex gap-2 shrink-0">
-                      <Button variant="outline" size="sm" onClick={() => openEdit(item)}>
-                        <Edit2 className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => {
-                          if (confirm(`Delete "${item.name}"?`)) deleteMutation.mutate(item.id);
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
+                    ))}
                   </div>
                 </CardContent>
               </Card>

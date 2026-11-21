@@ -353,6 +353,7 @@ CREATE TABLE IF NOT EXISTS "calculator_pricing" (
   "type" text NOT NULL,
   "name" text NOT NULL,
   "aliases" text,
+  "group_name" text,
   "unit" text NOT NULL DEFAULT 'flat',
   "price_gp" numeric(20, 2) NOT NULL,
   "description" text,

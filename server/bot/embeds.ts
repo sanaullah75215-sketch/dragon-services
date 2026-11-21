@@ -489,6 +489,8 @@ export function createCalculatorPricingListEmbed(data: any) {
 
   const type: string = data.type;
   const items: any[] = data.items || [];
+  const quantity = typeof data.quantity === 'number' && data.quantity > 0 ? data.quantity : 1;
+  const showTierTotals = !!data.showTierTotals && quantity > 1;
 
   const typeTitles: Record<string, string> = {
     boss: '🐉 Boss Prices',
@@ -499,6 +501,11 @@ export function createCalculatorPricingListEmbed(data: any) {
     per_kill: '/kill',
     flat: '',
     per_point: '/point',
+  };
+  const unitNames: Record<string, string> = {
+    per_kill: 'kills',
+    flat: '',
+    per_point: 'points',
   };
   const commandMap: Record<string, string> = {
     boss: '!b',
@@ -512,21 +519,68 @@ export function createCalculatorPricingListEmbed(data: any) {
   };
 
   const embed = new EmbedBuilder()
-    .setTitle(typeTitles[type] || ' Pricing')
+    .setTitle(data.titleOverride || typeTitles[type] || ' Pricing')
     .setColor(0xFF6B35)
     .setThumbnail('https://oldschool.runescape.wiki/images/thumb/4/4e/Dragon_full_helm.png/130px-Dragon_full_helm.png');
 
   let description = '';
+  if (data.userRank) {
+    description += `👑 Rank: **${data.userRank.name}**\n`;
+  }
+  if (showTierTotals) {
+    description += `🔢 Quantity: **${quantity.toLocaleString()}**\n`;
+  }
+  if (description) description += '\n';
 
   if (items.length === 0) {
-    description = `*No ${type} prices configured yet — ask an admin to add them in the dashboard.*`;
+    description += `*No ${type} prices configured yet — ask an admin to add them in the dashboard.*`;
   } else {
-    for (const item of items) {
-      const icon = item.customIcon || typeIcons[type] || '•';
-      const unitLabel = unitLabels[item.unit] ?? '';
-      description += `${icon} **${item.name}** — 💰 **${formatGP(item.priceGp)} GP**${unitLabel} • ≈ **${formatUSD(item.priceGp)} USD**${unitLabel}\n`;
-      if (item.description) {
-        description += `> ${String(item.description).split('\n')[0]}\n`;
+    // Group by groupName for nicer display when showing a full type list
+    const hasGroups = items.some(i => (i.groupName || '').trim());
+    if (hasGroups && !data.titleOverride) {
+      const groups = new Map<string, any[]>();
+      for (const item of items) {
+        const key = (item.groupName || '').trim() || item.name;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key)!.push(item);
+      }
+      for (const [groupName, groupItems] of Array.from(groups.entries())) {
+        if (groupItems.length > 1 || (groupItems[0].groupName || '').trim()) {
+          description += `**${groupName}**\n`;
+          for (const item of groupItems) {
+            const icon = item.customIcon || typeIcons[type] || '•';
+            const unitLabel = unitLabels[item.unit] ?? '';
+            const unitName = unitNames[item.unit] ?? '';
+            if (showTierTotals && typeof item.totalGp === 'number') {
+              description += `  ${icon} ${item.name}: **${formatGP(item.totalGp)} GP** • ≈ **${formatUSD(item.totalGp)} USD** (${quantity.toLocaleString()}${unitName ? ` ${unitName}` : ''})\n`;
+            } else {
+              description += `  ${icon} ${item.name}: **${formatGP(item.priceGp)} GP**${unitLabel} • ≈ **${formatUSD(item.priceGp)} USD**${unitLabel}\n`;
+            }
+            if (item.description) description += `  > ${String(item.description).split('\n')[0]}\n`;
+          }
+          description += '\n';
+        } else {
+          const item = groupItems[0];
+          const icon = item.customIcon || typeIcons[type] || '•';
+          const unitLabel = unitLabels[item.unit] ?? '';
+          description += `${icon} **${item.name}** — 💰 **${formatGP(item.priceGp)} GP**${unitLabel} • ≈ **${formatUSD(item.priceGp)} USD**${unitLabel}\n`;
+          if (item.description) description += `> ${String(item.description).split('\n')[0]}\n`;
+        }
+      }
+    } else {
+      for (const item of items) {
+        const icon = item.customIcon || typeIcons[type] || '•';
+        const unitLabel = unitLabels[item.unit] ?? '';
+        const unitName = unitNames[item.unit] ?? '';
+        if (showTierTotals && typeof item.totalGp === 'number') {
+          description += `${icon} **${item.name}**\n`;
+          description += `💰 ${formatGP(item.priceGp)} GP${unitLabel} • **${quantity.toLocaleString()}${unitName ? ` ${unitName}` : ''}: ${formatGP(item.totalGp)} GP** (≈ ${formatUSD(item.totalGp)} USD)\n`;
+        } else {
+          description += `${icon} **${item.name}** — 💰 **${formatGP(item.priceGp)} GP**${unitLabel} • ≈ **${formatUSD(item.priceGp)} USD**${unitLabel}\n`;
+        }
+        if (item.description) {
+          description += `> ${String(item.description).split('\n')[0]}\n`;
+        }
       }
     }
     description += `\n*💡 Use \`${commandMap[type]} <name> <quantity>\` for an exact quote*\n`;

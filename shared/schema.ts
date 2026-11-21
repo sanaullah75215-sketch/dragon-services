@@ -243,6 +243,7 @@ export const calculatorPricing = pgTable("calculator_pricing", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   type: text("type").notNull(), // 'boss' | 'item' | 'minigame'
   name: text("name").notNull(),
+  groupName: text("group_name"), // optional: group tiers together (e.g. "Chambers of Xeric")
   aliases: text("aliases"), // comma-separated alternative names, e.g. "zul, snake boss"
   unit: text("unit").notNull().default("flat"),
   priceGp: decimal("price_gp", { precision: 20, scale: 2 }).notNull(), // price in GP per unit

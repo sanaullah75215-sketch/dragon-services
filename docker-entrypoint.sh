@@ -149,6 +149,7 @@ if [ "$TABLE_EXISTS" = "t" ]; then
       updated_at timestamp NOT NULL DEFAULT now()
     );
     CREATE INDEX IF NOT EXISTS idx_calculator_pricing_type ON calculator_pricing USING btree (type);
+    ALTER TABLE calculator_pricing ADD COLUMN IF NOT EXISTS group_name text;
   " 2>&1 | grep -v "^$" || true
 
   echo "     Schema patches done!"

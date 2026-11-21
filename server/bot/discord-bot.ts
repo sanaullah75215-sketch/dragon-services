@@ -3973,8 +3973,28 @@ async function handlePricingCalculatorCommand(message: any, type: string) {
     }
     const searchName = nameTokens.join(' ').toLowerCase();
 
-    // Find entry: exact name → alias → partial match
     const entries = await storage.getCalculatorPricing(type);
+
+    // If query matches a group name, show that whole group
+    const groupMatch = entries.filter(e => (e.groupName || '').toLowerCase() === searchName);
+    if (groupMatch.length > 0) {
+      const usdRatePerM = await getUsdRatePerM();
+      const decorated = groupMatch.map(item => ({
+        ...item,
+        priceGp: parseFloat(item.priceGp),
+        customIcon: getSkillEmojiFromGuild(message.guild, item.name.toLowerCase())
+      }));
+      const embed = createCalculatorPricingListEmbed({
+        type,
+        items: decorated,
+        usdRatePerM,
+        titleOverride: `🐉 ${groupMatch[0].groupName} — Prices`
+      });
+      await message.reply({ embeds: [embed] });
+      return;
+    }
+
+    // Find entry: exact name → alias → partial match
     let entry = entries.find(e => e.name.toLowerCase() === searchName);
     if (!entry) {
       entry = entries.find(e => (e.aliases || '')
@@ -3989,6 +4009,10 @@ async function handlePricingCalculatorCommand(message: any, type: string) {
         e.name.toLowerCase().includes(searchName) || searchName.includes(e.name.toLowerCase())
       );
     }
+    // Also try matching group name partially
+    if (!entry) {
+      entry = entries.find(e => (e.groupName || '').toLowerCase().includes(searchName));
+    }
 
     if (!entry) {
       const entryTypeLabel = type === 'boss' ? 'Boss' : type === 'item' ? 'Item' : 'Minigame';
@@ -3999,58 +4023,100 @@ async function handlePricingCalculatorCommand(message: any, type: string) {
       return;
     }
 
-    const unitPriceGp = parseFloat(entry.priceGp);
-    if (!isFinite(unitPriceGp) || unitPriceGp <= 0) {
-      await message.reply(`❌ **Invalid price configured** for ${entry.name}. Please contact an admin.`);
-      return;
-    }
+    // If this entry belongs to a group, show all tiers in that group
+    const groupName = (entry.groupName || '').trim();
+    const groupEntries = groupName ? entries.filter(e => (e.groupName || '').trim() === groupName) : [entry];
 
-    // Per-point minigames need an explicit point count
-    if (entry.unit === 'per_point' && quantity <= 1) {
+    // Per-point check only when a single per-point entry is being quoted
+    if (groupEntries.length === 1 && entry.unit === 'per_point' && quantity <= 1) {
       await message.reply(`❌ **${entry.name}** is priced per point.\n\n` +
         `Use: \`${meta.command} ${entry.name} <points>\`\n` +
         `Example: \`${meta.command} ${entry.name} 500\``);
       return;
     }
 
-    const originalTotalGp = unitPriceGp * quantity;
-
-    // Rank discount (same system as the skilling calculator)
-    let discountApplied = false;
-    let discountPercentage = 0;
-    let totalGp = originalTotalGp;
+    // Rank discount context
     let userRank: any = null;
+    let walletSpent = 0;
+    let walletManualRank: string | null | undefined = null;
     try {
       const userWallet = await storage.getUserWallet(message.author.id);
       if (userWallet) {
         userRank = getCustomerRank(userWallet.totalSpentGp, userWallet.manualRank);
-        if (userWallet.totalSpentGp > 0) {
-          const discount = applyCustomerDiscount(originalTotalGp, userWallet.totalSpentGp, userWallet.manualRank);
-          discountApplied = true;
-          discountPercentage = discount.discountPercentage;
-          totalGp = discount.finalPrice;
-        }
+        walletSpent = userWallet.totalSpentGp || 0;
+        walletManualRank = userWallet.manualRank;
       }
     } catch {
       // No wallet → no discount
     }
 
     const usdRatePerM = await getUsdRatePerM();
-    const customIcon = getSkillEmojiFromGuild(message.guild, entry.name.toLowerCase());
 
-    const embed = createCalculatorPricingEmbed({
-      type,
-      entry: { ...entry, priceGp: unitPriceGp },
-      quantity,
-      originalTotalGp,
-      totalGp,
-      discountApplied,
-      discountPercentage,
-      userRank,
-      usdRatePerM,
-      customIcon
+    if (groupEntries.length === 1) {
+      const e = groupEntries[0];
+      const unitPriceGp = parseFloat(e.priceGp);
+      if (!isFinite(unitPriceGp) || unitPriceGp <= 0) {
+        await message.reply(`❌ **Invalid price configured** for ${e.name}. Please contact an admin.`);
+        return;
+      }
+      const originalTotalGp = unitPriceGp * quantity;
+      let discountApplied = false;
+      let discountPercentage = 0;
+      let totalGp = originalTotalGp;
+      if (walletSpent > 0) {
+        const discount = applyCustomerDiscount(originalTotalGp, walletSpent, walletManualRank);
+        discountApplied = true;
+        discountPercentage = discount.discountPercentage;
+        totalGp = discount.finalPrice;
+      }
+
+      const customIcon = getSkillEmojiFromGuild(message.guild, e.name.toLowerCase());
+      const embed = createCalculatorPricingEmbed({
+        type,
+        entry: { ...e, priceGp: unitPriceGp },
+        quantity,
+        originalTotalGp,
+        totalGp,
+        discountApplied,
+        discountPercentage,
+        userRank,
+        usdRatePerM,
+        customIcon
+      });
+      await message.reply({ embeds: [embed] });
+      return;
+    }
+
+    // Grouped tiers: show all tiers in one embed
+    const decorated = groupEntries.map(item => {
+      const unitPriceGp = parseFloat(item.priceGp);
+      const originalTotalGp = unitPriceGp * quantity;
+      let discountPercentage = 0;
+      let totalGp = originalTotalGp;
+      if (walletSpent > 0) {
+        const discount = applyCustomerDiscount(originalTotalGp, walletSpent, walletManualRank);
+        discountPercentage = discount.discountPercentage;
+        totalGp = discount.finalPrice;
+      }
+      return {
+        ...item,
+        priceGp: unitPriceGp,
+        originalTotalGp,
+        totalGp,
+        discountPercentage,
+        customIcon: getSkillEmojiFromGuild(message.guild, item.name.toLowerCase())
+      };
     });
 
+    const embed = createCalculatorPricingListEmbed({
+      type,
+      items: decorated,
+      usdRatePerM,
+      titleOverride: `🐉 ${groupName} — Prices`,
+      quantity,
+      userRank,
+      showTierTotals: quantity > 1
+    });
     await message.reply({ embeds: [embed] });
   } catch (error) {
     console.error(`Error in pricing calculator (${type}):`, error);
