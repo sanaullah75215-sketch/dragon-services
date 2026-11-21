@@ -27,12 +27,41 @@ const UNIT_LABELS: Record<string, string> = {
   per_point: 'Per point',
 };
 
+function parseGpInput(raw: string): number | null {
+  const s = String(raw).trim().toLowerCase().replace(/,/g, '').replace(/\s+/g, '');
+  if (!s) return null;
+  const m = s.match(/^([0-9]*\.?[0-9]+)([kmb])?$/);
+  if (!m) return null;
+  const n = parseFloat(m[1]);
+  if (!isFinite(n) || n < 0) return null;
+  const mult = m[2] === 'b' ? 1_000_000_000 : m[2] === 'm' ? 1_000_000 : m[2] === 'k' ? 1_000 : 1;
+  return Math.round(n * mult);
+}
+
+function formatGpInput(gp: string | number): string {
+  const n = parseFloat(String(gp));
+  if (!isFinite(n) || n <= 0) return '';
+  if (n >= 1_000_000_000) {
+    const v = n / 1_000_000_000;
+    return `${Number(v.toFixed(2))}B`;
+  }
+  if (n >= 1_000_000) {
+    const v = n / 1_000_000;
+    return `${Number(v.toFixed(2))}M`;
+  }
+  if (n >= 1_000) {
+    const v = n / 1_000;
+    return `${Number(v.toFixed(2))}K`;
+  }
+  return `${Math.round(n)}`;
+}
+
 const EMPTY_FORM: InsertCalculatorPricing = {
   type: 'boss',
   name: '',
   aliases: '',
   unit: 'per_kill',
-  priceGp: '0',
+  priceGp: '',
   description: '',
   duration: '',
   isActive: true,
@@ -95,7 +124,7 @@ export default function CalculatorPricingPage() {
       name: item.name,
       aliases: item.aliases ?? '',
       unit: item.unit,
-      priceGp: String(item.priceGp),
+      priceGp: formatGpInput(item.priceGp),
       description: item.description ?? '',
       duration: item.duration ?? '',
       isActive: item.isActive ?? true,
@@ -105,14 +134,16 @@ export default function CalculatorPricingPage() {
   };
 
   const submit = () => {
-    if (!form.name.trim() || !form.priceGp || parseFloat(form.priceGp) <= 0) {
-      toast({ title: 'Name and a price above 0 GP are required', variant: 'destructive' });
+    const parsedGp = parseGpInput(form.priceGp);
+    if (!form.name.trim() || parsedGp === null || parsedGp <= 0) {
+      toast({ title: 'Name and a valid price are required (e.g. 3.5M, 350K, 1.2B)', variant: 'destructive' });
       return;
     }
+    const payload: InsertCalculatorPricing = { ...form, priceGp: String(parsedGp) };
     if (editing) {
-      updateMutation.mutate({ id: editing.id, updates: form });
+      updateMutation.mutate({ id: editing.id, updates: payload });
     } else {
-      createMutation.mutate(form);
+      createMutation.mutate(payload);
     }
   };
 
@@ -158,12 +189,17 @@ export default function CalculatorPricingPage() {
         <div className="grid gap-2">
           <Label>Price (GP{form.unit === 'per_kill' ? ' per kill' : form.unit === 'per_point' ? ' per point' : ''})</Label>
           <Input
-            type="number"
-            min="0"
-            placeholder="e.g. 15000"
+            type="text"
+            inputMode="decimal"
+            placeholder="e.g. 3.5M, 350K, 1.2B"
             value={form.priceGp}
             onChange={(e) => setForm({ ...form, priceGp: e.target.value })}
           />
+          {(() => {
+            const parsed = parseGpInput(form.priceGp);
+            if (parsed === null) return null;
+            return <p className="text-xs text-muted-foreground">= {parsed.toLocaleString()} GP</p>;
+          })()}
         </div>
       </div>
       <div className="grid gap-2">
