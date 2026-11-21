@@ -79,20 +79,25 @@ export default function CreateOrderPage() {
 
   // Import rank utilities
   const getCustomerRank = (totalSpent: number, manualRank?: string): CustomerRank => {
-    // This would normally be imported from @shared/ranks
+    // Keep in sync with @shared/ranks thresholds
     const ranks = [
-      { name: 'IRON', color: '#8B4513', discount: 1, minSpent: 0 },
-      { name: 'BRONZE', color: '#CD7F32', discount: 2, minSpent: 50000 },
-      { name: 'SILVER', color: '#C0C0C0', discount: 4, minSpent: 150000 },
-      { name: 'GOLD', color: '#FFD700', discount: 6, minSpent: 500000 },
-      { name: 'RUNE', color: '#4169E1', discount: 8, minSpent: 1000000 }
+      { name: 'DRAGON APPRENTICE', color: '#8B7355', discount: 1, minSpent: 100_000_000 },
+      { name: 'IRONCLAD DRAGON', color: '#C0C0C0', discount: 2, minSpent: 500_000_000 },
+      { name: 'SHADOW DRAGON', color: '#2C2C2C', discount: 4, minSpent: 1_000_000_000 },
+      { name: 'ANCIENT DRAGON', color: '#228B22', discount: 6, minSpent: 2_000_000_000 },
+      { name: 'ROYAL DRAGON', color: '#4169E1', discount: 8, minSpent: 4_000_000_000 }
     ];
-    
+
+    const legacy: Record<string, string> = {
+      IRON: 'DRAGON APPRENTICE', STEEL: 'IRONCLAD DRAGON', BLACK: 'SHADOW DRAGON',
+      ADAMANT: 'ANCIENT DRAGON', RUNE: 'ROYAL DRAGON'
+    };
     if (manualRank) {
-      return ranks.find(r => r.name === manualRank) || ranks[0];
+      const resolved = legacy[manualRank.toUpperCase()] || manualRank.toUpperCase();
+      return ranks.find(r => r.name === resolved) || ranks[0];
     }
-    
-    return ranks.reverse().find(r => totalSpent >= r.minSpent) || ranks[0];
+
+    return [...ranks].reverse().find(r => totalSpent >= r.minSpent) || { name: 'No Rank', color: '#666', discount: 0, minSpent: 0 };
   };
 
   // Create order mutation

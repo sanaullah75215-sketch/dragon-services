@@ -34,6 +34,13 @@ export default function Management() {
       color: "bg-gradient-to-r from-orange-600 to-red-600"
     },
     {
+      title: "💎 Calculator Pricing",
+      description: "Manage boss, item and minigame prices for !b / !im / !m",
+      icon: <Swords className="h-6 w-6" />,
+      href: "/calculator-pricing",
+      color: "bg-gradient-to-r from-orange-600 to-red-600"
+    },
+    {
       title: "🎁 Special Offers",
       description: "Create and manage exclusive Dragon deals",
       icon: <Gift className="h-6 w-6" />,

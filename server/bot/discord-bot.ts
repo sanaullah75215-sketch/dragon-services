@@ -2,7 +2,7 @@ import { Client, GatewayIntentBits, Events, REST, Routes, EmbedBuilder, ButtonBu
 import { registerCommands } from './commands';
 import { storage } from '../storage';
 import { getCustomerRank, applyCustomerDiscount, getCustomerDiscount, formatGPAmount, getRankProgress, CUSTOMER_RANKS } from "@shared/ranks";
-import { createServicesEmbed, createServicesSelectMenu, createServiceOptionsEmbed, createServiceOptionsSelectMenu, createCalculatorEmbed, createCalculatorComponents, createServiceSelectionEmbed, createServiceSelectionComponents, createCalculationResultEmbed, createSkillCalculatorEmbed, createQuestCalculatorEmbed, createMultiQuestCalculatorEmbed } from './embeds';
+import { createServicesEmbed, createServicesSelectMenu, createServiceOptionsEmbed, createServiceOptionsSelectMenu, createCalculatorEmbed, createCalculatorComponents, createServiceSelectionEmbed, createServiceSelectionComponents, createCalculationResultEmbed, createSkillCalculatorEmbed, createQuestCalculatorEmbed, createMultiQuestCalculatorEmbed, createCalculatorPricingEmbed, createCalculatorPricingListEmbed } from './embeds';
 import { createSpecialOffersEmbed, createSingleOfferEmbed, createOffersSelectMenu, createOfferActionButtons } from './offers-embeds';
 import { startGpPriceTracker, runPriceCheck } from './gp-price-tracker';
 
@@ -280,6 +280,12 @@ export async function startDiscordBot() {
         await handleCalculatorCommand(message);
       } else if (message.content.startsWith('!s ')) {
         await handleSkillCalculatorCommand(message);
+      } else if (message.content === '!b' || message.content.startsWith('!b ')) {
+        await handlePricingCalculatorCommand(message, 'boss');
+      } else if (message.content === '!im' || message.content.startsWith('!im ')) {
+        await handlePricingCalculatorCommand(message, 'item');
+      } else if (message.content === '!m' || message.content.startsWith('!m ')) {
+        await handlePricingCalculatorCommand(message, 'minigame');
       } else if (message.content.startsWith('!q ')) {
         await handleQuestCalculatorCommand(message);
       } else if (message.content.startsWith('!wallet') || message.content.startsWith('!balance')) {
@@ -840,11 +846,11 @@ const SYTHE_VOUCH_CHANNEL_ID = '1414374807734190102';
 const RSPS_NOTIFICATION_CHANNEL_ID = '1476608268112760894';
 
 const STAFF_ROLE_IDS = [
-  '1414767189600370798', // IRON rank (staff tier)
-  '1414767429904633856', // STEEL rank
-  '1414767561748516966', // BLACK rank
-  '1414767663225245718', // ADAMANT rank
-  '1414767795945865237', // RUNE rank
+  '1414767189600370798', // DRAGON APPRENTICE rank (staff tier)
+  '1414767429904633856', // IRONCLAD DRAGON rank
+  '1414767561748516966', // SHADOW DRAGON rank
+  '1414767663225245718', // ANCIENT DRAGON rank
+  '1414767795945865237', // ROYAL DRAGON rank
 ];
 
 async function handleRspsBuyCommand(message: any) {
@@ -2171,7 +2177,7 @@ async function handleOrderClaim(interaction: any) {
         totalSpentGp: 0,
         totalEarningsGp: 0,
         totalOrders: 0,
-        manualRank: 'IRON',
+        manualRank: 'DRAGON APPRENTICE',
         customerRank: '0.00',
         isActive: true
       });
@@ -3904,6 +3910,150 @@ async function handleSkillCalculatorCommand(message: any) {  try {
 
   } catch (error) {
     console.error('Error in skill calculator:', error);
+    await message.reply('❌ An error occurred while calculating. Please try again.');
+  }
+}
+
+// ── Pricing calculators: !b (bosses), !im (items), !m (minigames) ─────────────
+// Prices come from the calculator_pricing table (dashboard-managed).
+//   !b zulrah 100   → 100 kills × per-kill price
+//   !im fire cape   → flat price (optional quantity multiplies)
+//   !m ba 500       → per-point minigame: 500 × price per point
+// No arguments → shows the price list for that type.
+
+const PRICING_CALCULATOR_META: Record<string, { command: string; usage: string; example: string }> = {
+  boss: { command: '!b', usage: '!b <boss> <kills>', example: '!b zulrah 100' },
+  item: { command: '!im', usage: '!im <item> [quantity]', example: '!im fire cape' },
+  minigame: { command: '!m', usage: '!m <minigame> [quantity/points]', example: '!m fire cape' },
+};
+
+async function getUsdRatePerM(): Promise<number> {
+  try {
+    const setting = await storage.getTicketSetting('skilling_usd_rate');
+    if (setting) {
+      const rate = parseFloat(setting);
+      if (isFinite(rate) && rate > 0) return rate;
+    }
+  } catch {
+    // Fall back to default rate if settings lookup fails
+  }
+  return 0.18;
+}
+
+async function handlePricingCalculatorCommand(message: any, type: string) {
+  try {
+    storage.updateCommandUsage('pricing-calculator').catch(() => {});
+
+    const meta = PRICING_CALCULATOR_META[type];
+    const argsRaw = message.content.slice(meta.command.length).trim();
+
+    // No arguments → show the price list for this type
+    if (!argsRaw) {
+      const items = await storage.getCalculatorPricing(type);
+      const usdRatePerM = await getUsdRatePerM();
+      const decorated = items.map(item => ({
+        ...item,
+        priceGp: parseFloat(item.priceGp),
+        customIcon: getSkillEmojiFromGuild(message.guild, item.name.toLowerCase())
+      }));
+      const embed = createCalculatorPricingListEmbed({ type, items: decorated, usdRatePerM });
+      await message.reply({ embeds: [embed] });
+      return;
+    }
+
+    const tokens = argsRaw.split(/\s+/);
+    // Trailing numeric token = quantity (kills / points / qty)
+    let quantity = 1;
+    let nameTokens = tokens;
+    const lastToken = tokens[tokens.length - 1];
+    const parsedQty = parseInt(lastToken);
+    if (tokens.length > 1 && !isNaN(parsedQty) && parsedQty > 0) {
+      quantity = parsedQty;
+      nameTokens = tokens.slice(0, -1);
+    }
+    const searchName = nameTokens.join(' ').toLowerCase();
+
+    // Find entry: exact name → alias → partial match
+    const entries = await storage.getCalculatorPricing(type);
+    let entry = entries.find(e => e.name.toLowerCase() === searchName);
+    if (!entry) {
+      entry = entries.find(e => (e.aliases || '')
+        .toLowerCase()
+        .split(',')
+        .map((a: string) => a.trim())
+        .includes(searchName));
+    }
+    if (!entry) {
+      const sorted = [...entries].sort((a, b) => b.name.length - a.name.length);
+      entry = sorted.find(e =>
+        e.name.toLowerCase().includes(searchName) || searchName.includes(e.name.toLowerCase())
+      );
+    }
+
+    if (!entry) {
+      const entryTypeLabel = type === 'boss' ? 'Boss' : type === 'item' ? 'Item' : 'Minigame';
+      const available = entries.map(e => e.name).join(', ') || 'none configured yet';
+      await message.reply(`❌ **${entryTypeLabel} not found!**\n\n` +
+        `Available: ${available}\n\n` +
+        `Use \`${meta.usage}\` — e.g. \`${meta.example}\``);
+      return;
+    }
+
+    const unitPriceGp = parseFloat(entry.priceGp);
+    if (!isFinite(unitPriceGp) || unitPriceGp <= 0) {
+      await message.reply(`❌ **Invalid price configured** for ${entry.name}. Please contact an admin.`);
+      return;
+    }
+
+    // Per-point minigames need an explicit point count
+    if (entry.unit === 'per_point' && quantity <= 1) {
+      await message.reply(`❌ **${entry.name}** is priced per point.\n\n` +
+        `Use: \`${meta.command} ${entry.name} <points>\`\n` +
+        `Example: \`${meta.command} ${entry.name} 500\``);
+      return;
+    }
+
+    const originalTotalGp = unitPriceGp * quantity;
+
+    // Rank discount (same system as the skilling calculator)
+    let discountApplied = false;
+    let discountPercentage = 0;
+    let totalGp = originalTotalGp;
+    let userRank: any = null;
+    try {
+      const userWallet = await storage.getUserWallet(message.author.id);
+      if (userWallet) {
+        userRank = getCustomerRank(userWallet.totalSpentGp, userWallet.manualRank);
+        if (userWallet.totalSpentGp > 0) {
+          const discount = applyCustomerDiscount(originalTotalGp, userWallet.totalSpentGp, userWallet.manualRank);
+          discountApplied = true;
+          discountPercentage = discount.discountPercentage;
+          totalGp = discount.finalPrice;
+        }
+      }
+    } catch {
+      // No wallet → no discount
+    }
+
+    const usdRatePerM = await getUsdRatePerM();
+    const customIcon = getSkillEmojiFromGuild(message.guild, entry.name.toLowerCase());
+
+    const embed = createCalculatorPricingEmbed({
+      type,
+      entry: { ...entry, priceGp: unitPriceGp },
+      quantity,
+      originalTotalGp,
+      totalGp,
+      discountApplied,
+      discountPercentage,
+      userRank,
+      usdRatePerM,
+      customIcon
+    });
+
+    await message.reply({ embeds: [embed] });
+  } catch (error) {
+    console.error(`Error in pricing calculator (${type}):`, error);
     await message.reply('❌ An error occurred while calculating. Please try again.');
   }
 }
@@ -6482,7 +6632,7 @@ async function handleOrderServiceSelection(interaction: any, serviceId: string) 
         totalSpentGp: 0,
         totalEarningsGp: 0,
         totalOrders: 0,
-        customerRank: 'IRON',
+        customerRank: 'DRAGON APPRENTICE',
         isActive: true
       });
     }
@@ -6498,8 +6648,8 @@ async function handleOrderServiceSelection(interaction: any, serviceId: string) 
           inline: true
         },
         {
-          name: '🏆 Your Rank',
-          value: wallet.customerRank || 'IRON',
+          name: '👑 Your Rank',
+          value: getCustomerRank(wallet.totalSpentGp, wallet.manualRank)?.name || 'No Rank',
           inline: true
         },
         {

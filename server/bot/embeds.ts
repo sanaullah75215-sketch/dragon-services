@@ -390,6 +390,160 @@ export function createSkillCalculatorEmbed(data: any) {
   return embed;
 }
 
+// ── Calculator pricing embeds (!b bosses / !im items / !m minigames) ──────────
+// Same Swift-style look as the skilling calculator: rank/discount on top in
+// description text, bold prices with GP + USD, Dragon footer.
+
+export function createCalculatorPricingEmbed(data: any) {
+  const formatGP = (gp: number) => {
+    if (gp >= 1000000000) {
+      return `${(gp / 1000000000).toFixed(2)}B`;
+    } else if (gp >= 1000000) {
+      return `${(gp / 1000000).toFixed(2)}M`;
+    } else if (gp >= 1000) {
+      return `${(gp / 1000).toFixed(1)}K`;
+    } else {
+      return `${Math.round(gp)}`;
+    }
+  };
+
+  const usdRatePerM = typeof data.usdRatePerM === 'number' && data.usdRatePerM > 0 ? data.usdRatePerM : 0.18;
+  const formatUSD = (gp: number) => `$${(gp / 1_000_000 * usdRatePerM).toFixed(2)}`;
+
+  const type: string = data.type;
+  const entry = data.entry;
+  const quantity: number = data.quantity ?? 1;
+  const discountPercentage: number = data.discountPercentage || 0;
+  const hasDiscount = data.discountApplied && discountPercentage > 0;
+
+  const typeLabels: Record<string, string> = {
+    boss: 'Bossing Calculator',
+    item: 'Item Calculator',
+    minigame: 'Minigame Calculator',
+  };
+  const unitLabels: Record<string, string> = {
+    per_kill: 'kills',
+    flat: '',
+    per_point: 'points',
+  };
+  const unitLabel = unitLabels[entry.unit] ?? '';
+
+  const titleIcon = data.customIcon || '🐲';
+  const entryName = entry.name.charAt(0).toUpperCase() + entry.name.slice(1);
+
+  const embed = new EmbedBuilder()
+    .setTitle(`${titleIcon} ${entryName} — ${typeLabels[type] || 'Calculator'}`)
+    .setColor(hasDiscount ? 0x57F287 : 0xFF6B35)
+    .setThumbnail('https://oldschool.runescape.wiki/images/thumb/4/4e/Dragon_full_helm.png/130px-Dragon_full_helm.png');
+
+  let description = `👑 Rank: **${data.userRank ? data.userRank.name : 'N/A'}**\n`;
+  const targetLine = quantity > 1
+    ? `🎯 ${entryName}  •  🔢 Quantity: **${quantity.toLocaleString()}${unitLabel ? ` ${unitLabel}` : ''}**`
+    : `🎯 ${entryName}`;
+  description += `${targetLine}  •  🎁 Discount: **${hasDiscount ? discountPercentage : 0}%**\n\n`;
+
+  description += `### ✅ PRICE\n`;
+  const unitLine = unitLabel
+    ? `**1 ${unitLabel.replace(/s$/, '')}:** 💰 **${formatGP(entry.priceGp)} GP**`
+    : `**Service price:** 💰 **${formatGP(entry.priceGp)} GP**`;
+  description += `${unitLine} • ≈ **${formatUSD(entry.priceGp)} USD**\n`;
+
+  if (quantity > 1) {
+    const totalLine = hasDiscount
+      ? `~~${formatGP(data.originalTotalGp)}~~ 💵 **${formatGP(data.totalGp)} GP**`
+      : `💵 **${formatGP(data.totalGp)} GP**`;
+    description += `**${quantity.toLocaleString()}${unitLabel ? ` ${unitLabel}` : ''}:** ${totalLine} • ≈ **${formatUSD(data.totalGp)} USD**\n`;
+  }
+
+  if (entry.description) {
+    description += `\n📝 ${entry.description}\n`;
+  }
+  if (entry.duration) {
+    description += `⏱️ Estimated: **${entry.duration}**\n`;
+  }
+
+  embed.setDescription(description.trim());
+
+  embed.setFooter({
+    text: `🐲 Dragon Services • Use !${type === 'boss' ? 'b' : type === 'item' ? 'im' : 'm'} <name> <quantity>`,
+    iconURL: 'https://oldschool.runescape.wiki/images/thumb/4/4e/Dragon_full_helm.png/21px-Dragon_full_helm.png'
+  });
+
+  embed.setTimestamp();
+
+  return embed;
+}
+
+export function createCalculatorPricingListEmbed(data: any) {
+  const formatGP = (gp: number) => {
+    if (gp >= 1000000000) {
+      return `${(gp / 1000000000).toFixed(2)}B`;
+    } else if (gp >= 1000000) {
+      return `${(gp / 1000000).toFixed(2)}M`;
+    } else if (gp >= 1000) {
+      return `${(gp / 1000).toFixed(1)}K`;
+    } else {
+      return `${Math.round(gp)}`;
+    }
+  };
+
+  const usdRatePerM = typeof data.usdRatePerM === 'number' && data.usdRatePerM > 0 ? data.usdRatePerM : 0.18;
+  const formatUSD = (gp: number) => `$${(gp / 1_000_000 * usdRatePerM).toFixed(2)}`;
+
+  const type: string = data.type;
+  const items: any[] = data.items || [];
+
+  const typeTitles: Record<string, string> = {
+    boss: '🐉 Boss Prices',
+    item: '🏺 Item Prices',
+    minigame: '🎮 Minigame Prices',
+  };
+  const unitLabels: Record<string, string> = {
+    per_kill: '/kill',
+    flat: '',
+    per_point: '/point',
+  };
+  const commandMap: Record<string, string> = {
+    boss: '!b',
+    item: '!im',
+    minigame: '!m',
+  };
+  const typeIcons: Record<string, string> = {
+    boss: '⚔️',
+    item: '🏺',
+    minigame: '🎮',
+  };
+
+  const embed = new EmbedBuilder()
+    .setTitle(typeTitles[type] || ' Pricing')
+    .setColor(0xFF6B35)
+    .setThumbnail('https://oldschool.runescape.wiki/images/thumb/4/4e/Dragon_full_helm.png/130px-Dragon_full_helm.png');
+
+  let description = '';
+
+  if (items.length === 0) {
+    description = `*No ${type} prices configured yet — ask an admin to add them in the dashboard.*`;
+  } else {
+    for (const item of items) {
+      const icon = item.customIcon || typeIcons[type] || '•';
+      const unitLabel = unitLabels[item.unit] ?? '';
+      description += `${icon} **${item.name}** — 💰 **${formatGP(item.priceGp)} GP**${unitLabel} • ≈ **${formatUSD(item.priceGp)} USD**${unitLabel}\n`;
+    }
+    description += `\n*💡 Use \`${commandMap[type]} <name> <quantity>\` for an exact quote*\n`;
+  }
+
+  embed.setDescription(description.trim());
+
+  embed.setFooter({
+    text: `Total prices: ${items.length} • 🐲 Dragon Services`,
+    iconURL: 'https://oldschool.runescape.wiki/images/thumb/4/4e/Dragon_full_helm.png/21px-Dragon_full_helm.png'
+  });
+
+  embed.setTimestamp();
+
+  return embed;
+}
+
 function getOSRSSkillIconUrl(skillName: string): string {
   const iconUrls: { [key: string]: string } = {
     'runecrafting': 'https://oldschool.runescape.wiki/images/thumb/d/d3/Runecraft_icon.png/21px-Runecraft_icon.png',

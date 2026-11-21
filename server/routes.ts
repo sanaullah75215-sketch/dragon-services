@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { startDiscordBot, getBotStatus, client } from "./bot/discord-bot";
 import { createOfferAnnouncementEmbed, createOfferAnnouncementButtons } from "./bot/offers-embeds";
-import { insertServiceSchema, insertUserInteractionSchema, insertSpecialOfferSchema, insertUserWalletSchema, insertWalletTransactionSchema, insertPaymentMethodSchema, insertGpRateSchema } from "@shared/schema";
+import { insertServiceSchema, insertUserInteractionSchema, insertSpecialOfferSchema, insertUserWalletSchema, insertWalletTransactionSchema, insertPaymentMethodSchema, insertGpRateSchema, insertCalculatorPricingSchema } from "@shared/schema";
 import { getTrackerStatus, runPriceCheck, calculateRates } from './bot/gp-price-tracker';
 import ExcelJS from 'exceljs';
 import { EmbedBuilder, TextChannel, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
@@ -378,6 +378,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Error saving offers channel:', error);
       res.status(500).json({ message: 'Failed to save offers channel' });
+    }
+  });
+
+  // GET /api/calculator-pricing — bosses/items/minigames pricing (optionally filter by ?type=)
+  app.get("/api/calculator-pricing", async (req, res) => {
+    try {
+      const type = (req.query.type as string | undefined)?.trim();
+      if (type && !['boss', 'item', 'minigame'].includes(type)) {
+        return res.status(400).json({ message: "Invalid type — use 'boss', 'item' or 'minigame'" });
+      }
+      const items = await storage.getCalculatorPricing(type || undefined);
+      res.json(items);
+    } catch (error) {
+      console.error('Error fetching calculator pricing:', error);
+      res.status(500).json({ message: 'Failed to fetch calculator pricing' });
+    }
+  });
+
+  // GET /api/calculator-pricing/all — includes inactive entries (dashboard management)
+  app.get("/api/calculator-pricing/all", async (req, res) => {
+    try {
+      const items = await storage.getAllCalculatorPricing();
+      res.json(items);
+    } catch (error) {
+      console.error('Error fetching all calculator pricing:', error);
+      res.status(500).json({ message: 'Failed to fetch calculator pricing' });
+    }
+  });
+
+  app.post("/api/calculator-pricing", async (req, res) => {
+    try {
+      const validatedData = insertCalculatorPricingSchema.parse(req.body);
+      const item = await storage.createCalculatorPricing(validatedData);
+      res.status(201).json(item);
+    } catch (error) {
+      console.error('Error creating calculator pricing:', error);
+      res.status(500).json({ message: 'Failed to create calculator pricing' });
+    }
+  });
+
+  app.patch("/api/calculator-pricing/:id", async (req, res) => {
+    try {
+      const updates = insertCalculatorPricingSchema.partial().parse(req.body);
+      const item = await storage.updateCalculatorPricing(req.params.id, updates);
+      if (!item) {
+        return res.status(404).json({ message: 'Calculator pricing entry not found' });
+      }
+      res.json(item);
+    } catch (error) {
+      console.error('Error updating calculator pricing:', error);
+      res.status(500).json({ message: 'Failed to update calculator pricing' });
+    }
+  });
+
+  app.delete("/api/calculator-pricing/:id", async (req, res) => {
+    try {
+      await storage.deleteCalculatorPricing(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error deleting calculator pricing:', error);
+      res.status(500).json({ message: 'Failed to delete calculator pricing' });
     }
   });
 

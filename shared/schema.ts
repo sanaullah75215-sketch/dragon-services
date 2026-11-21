@@ -237,6 +237,29 @@ export const insertQuestPricingSchema = createInsertSchema(questPricing).omit({
   updatedAt: true,
 });
 
+// Calculator pricing for bosses (!b), items (!im) and minigames (!m)
+// unit: 'per_kill' = price × kills | 'flat' = one-off price | 'per_point' = price × points
+export const calculatorPricing = pgTable("calculator_pricing", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  type: text("type").notNull(), // 'boss' | 'item' | 'minigame'
+  name: text("name").notNull(),
+  aliases: text("aliases"), // comma-separated alternative names, e.g. "zul, snake boss"
+  unit: text("unit").notNull().default("flat"),
+  priceGp: decimal("price_gp", { precision: 20, scale: 2 }).notNull(), // price in GP per unit
+  description: text("description"),
+  duration: text("duration"), // estimated completion time
+  isActive: boolean("is_active").default(true),
+  sortOrder: integer("sort_order").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertCalculatorPricingSchema = createInsertSchema(calculatorPricing).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export type Service = typeof services.$inferSelect;
 export type InsertService = z.infer<typeof insertServiceSchema>;
 export type BotCommand = typeof botCommands.$inferSelect;
@@ -251,6 +274,8 @@ export type Quest = typeof quests.$inferSelect;
 export type InsertQuest = z.infer<typeof insertQuestSchema>;
 export type QuestPricing = typeof questPricing.$inferSelect;
 export type InsertQuestPricing = z.infer<typeof insertQuestPricingSchema>;
+export type CalculatorPricing = typeof calculatorPricing.$inferSelect;
+export type InsertCalculatorPricing = z.infer<typeof insertCalculatorPricingSchema>;
 export type SpecialOffer = typeof specialOffers.$inferSelect;
 export type ExperienceLevel = typeof experienceTable.$inferSelect;
 

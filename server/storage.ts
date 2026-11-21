@@ -6,6 +6,7 @@ import {
   trainingMethods, type TrainingMethod, type InsertTrainingMethod,
   quests, insertQuestSchema, type Quest, type InsertQuest,
   questPricing, type QuestPricing, type InsertQuestPricing,
+  calculatorPricing, type CalculatorPricing, type InsertCalculatorPricing,
   specialOffers, insertSpecialOfferSchema, type SpecialOffer, type InsertSpecialOffer,
   userWallets, insertUserWalletSchema, type UserWallet, type InsertUserWallet,
   walletTransactions, insertWalletTransactionSchema, type WalletTransaction, type InsertWalletTransaction,
@@ -996,6 +997,50 @@ export class DatabaseStorage implements IStorage {
 
   async deleteQuestPricing(id: string): Promise<void> {
     await db.delete(questPricing).where(eq(questPricing.id, id));
+  }
+
+  // Calculator pricing operations (bosses / items / minigames)
+  async getCalculatorPricing(type?: string): Promise<CalculatorPricing[]> {
+    const conditions = [eq(calculatorPricing.isActive, true)];
+    if (type) conditions.push(eq(calculatorPricing.type, type));
+    return await db
+      .select()
+      .from(calculatorPricing)
+      .where(and(...conditions))
+      .orderBy(asc(calculatorPricing.sortOrder), asc(calculatorPricing.name));
+  }
+
+  async getAllCalculatorPricing(): Promise<CalculatorPricing[]> {
+    return await db
+      .select()
+      .from(calculatorPricing)
+      .orderBy(asc(calculatorPricing.sortOrder), asc(calculatorPricing.name));
+  }
+
+  async getCalculatorPricingItem(id: string): Promise<CalculatorPricing | undefined> {
+    const [item] = await db.select().from(calculatorPricing).where(eq(calculatorPricing.id, id));
+    return item || undefined;
+  }
+
+  async createCalculatorPricing(data: InsertCalculatorPricing): Promise<CalculatorPricing> {
+    const [item] = await db
+      .insert(calculatorPricing)
+      .values(data)
+      .returning();
+    return item;
+  }
+
+  async updateCalculatorPricing(id: string, updates: Partial<CalculatorPricing>): Promise<CalculatorPricing | undefined> {
+    const [item] = await db
+      .update(calculatorPricing)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(calculatorPricing.id, id))
+      .returning();
+    return item || undefined;
+  }
+
+  async deleteCalculatorPricing(id: string): Promise<void> {
+    await db.delete(calculatorPricing).where(eq(calculatorPricing.id, id));
   }
 
   // Special Offer operations

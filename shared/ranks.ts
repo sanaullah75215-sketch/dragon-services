@@ -11,8 +11,8 @@ export interface CustomerRank {
 
 export const CUSTOMER_RANKS: CustomerRank[] = [
   {
-    name: "IRON",
-    emoji: "🥉",
+    name: "DRAGON APPRENTICE",
+    emoji: "⚒️",
     discountPercentage: 1,
     minSpent: 100_000_000, // 100M GP
     maxSpent: 499_999_999, // 499M GP
@@ -20,8 +20,8 @@ export const CUSTOMER_RANKS: CustomerRank[] = [
     roleId: "1414767189600370798" // 1% rank role
   },
   {
-    name: "STEEL", 
-    emoji: "⚪",
+    name: "IRONCLAD DRAGON",
+    emoji: "⚔️",
     discountPercentage: 2,
     minSpent: 500_000_000, // 500M GP
     maxSpent: 999_999_999, // 999M GP
@@ -29,8 +29,8 @@ export const CUSTOMER_RANKS: CustomerRank[] = [
     roleId: "1414767429904633856" // 2% rank role
   },
   {
-    name: "BLACK",
-    emoji: "⚫",
+    name: "SHADOW DRAGON",
+    emoji: "🖤",
     discountPercentage: 4,
     minSpent: 1_000_000_000, // 1B GP
     maxSpent: 1_999_999_999, // 1.999B GP
@@ -38,8 +38,8 @@ export const CUSTOMER_RANKS: CustomerRank[] = [
     roleId: "1414767561748516966" // 4% rank role
   },
   {
-    name: "ADAMANT",
-    emoji: "🟢",
+    name: "ANCIENT DRAGON",
+    emoji: "💎",
     discountPercentage: 6,
     minSpent: 2_000_000_000, // 2B GP
     maxSpent: 3_999_999_999, // 3.999B GP
@@ -47,8 +47,8 @@ export const CUSTOMER_RANKS: CustomerRank[] = [
     roleId: "1414767663225245718" // 6% rank role
   },
   {
-    name: "RUNE",
-    emoji: "🔵",
+    name: "ROYAL DRAGON",
+    emoji: "👑",
     discountPercentage: 8,
     minSpent: 4_000_000_000, // 4B GP
     maxSpent: Number.MAX_SAFE_INTEGER, // No upper limit
@@ -57,13 +57,28 @@ export const CUSTOMER_RANKS: CustomerRank[] = [
   }
 ];
 
+// Backward compatibility for old rank names stored in DB (manualRank)
+const LEGACY_RANK_NAMES: Record<string, string> = {
+  IRON: "DRAGON APPRENTICE",
+  STEEL: "IRONCLAD DRAGON",
+  BLACK: "SHADOW DRAGON",
+  ADAMANT: "ANCIENT DRAGON",
+  RUNE: "ROYAL DRAGON",
+};
+
+function resolveRankName(name: string): string {
+  const upper = name.toUpperCase().trim();
+  return LEGACY_RANK_NAMES[upper] || upper;
+}
+
 /**
  * Calculate customer rank based on total spent amount
  */
 export function getCustomerRank(totalSpentGp: number, manualRank?: string | null): CustomerRank | null {
   // Check for manual rank override first
   if (manualRank) {
-    const rank = CUSTOMER_RANKS.find(r => r.name === manualRank);
+    const resolved = resolveRankName(manualRank);
+    const rank = CUSTOMER_RANKS.find(r => r.name === resolved);
     if (rank) return rank;
   }
 
@@ -164,7 +179,7 @@ export function getRankProgress(totalSpentGp: number, manualRank?: string | null
       // No current rank, progress to first rank
       progressToNext = (totalSpentGp / nextRank.minSpent) * 100;
     }
-  } else if (currentRank && currentRank.name === "RUNE") {
+  } else if (currentRank && currentRank.name === "ROYAL DRAGON") {
     // Already at max rank
     progressToNext = 100;
     amountToNext = 0;

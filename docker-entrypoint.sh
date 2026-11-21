@@ -132,6 +132,25 @@ if [ "$TABLE_EXISTS" = "t" ]; then
     );
   " 2>&1 | grep -v "^$" || true
 
+  # Patch: create calculator_pricing table if missing (bosses / items / minigames pricing)
+  psql "$DATABASE_URL" -c "
+    CREATE TABLE IF NOT EXISTS calculator_pricing (
+      id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+      type text NOT NULL,
+      name text NOT NULL,
+      aliases text,
+      unit text NOT NULL DEFAULT 'flat',
+      price_gp numeric(20, 2) NOT NULL,
+      description text,
+      duration text,
+      is_active boolean NOT NULL DEFAULT true,
+      sort_order integer DEFAULT 0,
+      created_at timestamp NOT NULL DEFAULT now(),
+      updated_at timestamp NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS idx_calculator_pricing_type ON calculator_pricing USING btree (type);
+  " 2>&1 | grep -v "^$" || true
+
   echo "     Schema patches done!"
 else
   echo "     First run - creating tables..."

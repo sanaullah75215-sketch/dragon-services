@@ -345,3 +345,21 @@ CREATE TABLE IF NOT EXISTS "tickets" (
   "closed_category_id" text,
   "created_at" timestamp NOT NULL DEFAULT now()
 );
+
+
+-- Calculator pricing for bosses (!b), items (!im) and minigames (!m)
+CREATE TABLE IF NOT EXISTS "calculator_pricing" (
+  "id" varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+  "type" text NOT NULL,
+  "name" text NOT NULL,
+  "aliases" text,
+  "unit" text NOT NULL DEFAULT 'flat',
+  "price_gp" numeric(20, 2) NOT NULL,
+  "description" text,
+  "duration" text,
+  "is_active" boolean NOT NULL DEFAULT true,
+  "sort_order" integer DEFAULT 0,
+  "created_at" timestamp NOT NULL DEFAULT now(),
+  "updated_at" timestamp NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS "idx_calculator_pricing_type" ON "calculator_pricing" USING btree ("type");

@@ -17,6 +17,7 @@ import VouchManagement from "@/pages/VouchManagement";
 import OrdersPage from "@/pages/OrdersPage";
 import CreateOrderPage from "@/pages/CreateOrderPage";
 import GpRatesPage from "@/pages/GpRatesPage";
+import CalculatorPricingPage from "@/pages/CalculatorPricingPage";
 import PaymentMethodsPage from "@/pages/PaymentMethodsPage";
 import TicketsPage from "@/pages/TicketsPage";
 import TranscriptPage from "@/pages/TranscriptPage";
@@ -38,6 +39,7 @@ function Router() {
       <Route path="/admin/vouches" component={VouchManagement} />
       <Route path="/admin/gp-rates" component={GpRatesPage} />
       <Route path="/admin/payment-methods" component={PaymentMethodsPage} />
+      <Route path="/calculator-pricing" component={CalculatorPricingPage} />
       <Route path="/orders" component={OrdersPage} />
       <Route path="/create-order" component={CreateOrderPage} />
       <Route path="/tickets" component={TicketsPage} />

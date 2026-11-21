@@ -100,11 +100,12 @@ export default function AdminWalletManagement() {
 
   const getRankBadge = (rank: string) => {
     const rankNum = parseFloat(rank) || 0;
-    if (rankNum >= 8) return <Badge className="bg-purple-600">RUNE</Badge>;
-    if (rankNum >= 6) return <Badge className="bg-blue-600">ADAMANT</Badge>;
-    if (rankNum >= 4) return <Badge className="bg-green-600">MITHRIL</Badge>;
-    if (rankNum >= 2) return <Badge className="bg-yellow-600">STEEL</Badge>;
-    return <Badge className="bg-gray-600">IRON</Badge>;
+    if (rankNum >= 8) return <Badge className="bg-purple-600">ROYAL DRAGON</Badge>;
+    if (rankNum >= 6) return <Badge className="bg-blue-600">ANCIENT DRAGON</Badge>;
+    if (rankNum >= 4) return <Badge className="bg-green-600">SHADOW DRAGON</Badge>;
+    if (rankNum >= 2) return <Badge className="bg-yellow-600">IRONCLAD DRAGON</Badge>;
+    if (rankNum >= 1) return <Badge className="bg-gray-600">DRAGON APPRENTICE</Badge>;
+    return <Badge variant="outline">No Rank</Badge>;
   };
 
   const handleEditWallet = (wallet: UserWallet) => {
