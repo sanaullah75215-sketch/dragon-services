@@ -456,10 +456,7 @@ export function createCalculatorPricingEmbed(data: any) {
   }
 
   if (entry.description) {
-    description += `\n📝 ${entry.description}\n`;
-  }
-  if (entry.duration) {
-    description += `⏱️ Estimated: **${entry.duration}**\n`;
+    description += `\n📋 **Details**\n${entry.description}\n`;
   }
 
   embed.setDescription(description.trim());
@@ -528,6 +525,9 @@ export function createCalculatorPricingListEmbed(data: any) {
       const icon = item.customIcon || typeIcons[type] || '•';
       const unitLabel = unitLabels[item.unit] ?? '';
       description += `${icon} **${item.name}** — 💰 **${formatGP(item.priceGp)} GP**${unitLabel} • ≈ **${formatUSD(item.priceGp)} USD**${unitLabel}\n`;
+      if (item.description) {
+        description += `> ${String(item.description).split('\n')[0]}\n`;
+      }
     }
     description += `\n*💡 Use \`${commandMap[type]} <name> <quantity>\` for an exact quote*\n`;
   }

@@ -166,31 +166,29 @@ export default function CalculatorPricingPage() {
           />
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div className="grid gap-2">
-          <Label>Estimated duration (optional)</Label>
-          <Input
-            placeholder="e.g. 2-3 hours"
-            value={form.duration ?? ''}
-            onChange={(e) => setForm({ ...form, duration: e.target.value })}
-          />
-        </div>
-        <div className="grid gap-2">
-          <Label>Sort order</Label>
-          <Input
-            type="number"
-            value={form.sortOrder ?? 0}
-            onChange={(e) => setForm({ ...form, sortOrder: parseInt(e.target.value) || 0 })}
-          />
-        </div>
+      <div className="grid gap-2">
+        <Label>Sort order</Label>
+        <Input
+          type="number"
+          value={form.sortOrder ?? 0}
+          onChange={(e) => setForm({ ...form, sortOrder: parseInt(e.target.value) || 0 })}
+        />
       </div>
       <div className="grid gap-2">
-        <Label>Description (optional)</Label>
+        <Label>Description / gear info (shown in bot)</Label>
         <Textarea
-          placeholder="Notes shown to customers, e.g. includes all loot drops"
+          placeholder={form.type === 'boss'
+            ? 'e.g. 3.53M for CG at 99 max • Bowfa + crystal armour recommended'
+            : form.type === 'minigame'
+              ? 'e.g. Requires 40+ combat • Points vary by role'
+              : 'e.g. Includes all requirements • Safe & fast service'}
           value={form.description ?? ''}
           onChange={(e) => setForm({ ...form, description: e.target.value })}
+          className="min-h-[90px]"
         />
+        <p className="text-xs text-muted-foreground">
+          This shows in the Discord calculator embed (gear/stats/notes).
+        </p>
       </div>
       <div className="flex items-center gap-2">
         <Switch checked={form.isActive ?? true} onCheckedChange={(v) => setForm({ ...form, isActive: v })} />
@@ -235,11 +233,10 @@ export default function CalculatorPricingPage() {
                       </div>
                       <div className="text-sm text-muted-foreground mt-1">
                         💰 <span className="font-semibold text-foreground">{formatGP(item.priceGp)} GP</span>
-                        {item.duration && <> • ⏱️ {item.duration}</>}
                         {item.aliases && <> • aka {item.aliases}</>}
                       </div>
                       {item.description && (
-                        <p className="text-xs text-muted-foreground mt-1 line-clamp-1">{item.description}</p>
+                        <p className="text-xs text-muted-foreground mt-1 line-clamp-2 whitespace-pre-line">{item.description}</p>
                       )}
                     </div>
                     <div className="flex gap-2 shrink-0">
