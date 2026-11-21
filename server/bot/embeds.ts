@@ -537,7 +537,7 @@ export function createCalculatorPricingListEmbed(data: any) {
     description += `👑 Rank: **${data.userRank.name}**\n`;
   }
   if (showTierTotals) {
-    description += `🔢 Quantity: **${quantity.toLocaleString()}**\n`;
+    description += `🔢 Quantity: **${quantity.toLocaleString()}** *(flat tiers stay the same)*\n`;
   }
   if (description) description += '\n';
 
@@ -565,7 +565,9 @@ export function createCalculatorPricingListEmbed(data: any) {
               const cost = hasDisc
                 ? `~~${formatGP(item.originalTotalGp)}~~ **${formatGP(item.totalGp)} GP**`
                 : `**${formatGP(item.totalGp)} GP**`;
-              description += `  ${icon} ${item.name}: ${cost} • ≈ **${formatUSD(item.totalGp)} USD** (${quantity.toLocaleString()}${unitName ? ` ${unitName}` : ''})\n`;
+              const qtyUsed = item.effectiveQty ?? quantity;
+              const qtyNote = item.unit === 'flat' ? 'flat' : `${qtyUsed.toLocaleString()}${unitName ? ` ${unitName}` : ''}`;
+              description += `  ${icon} ${item.name}: ${cost} • ≈ **${formatUSD(item.totalGp)} USD** (${qtyNote})\n`;
             } else {
               description += `  ${icon} ${item.name}: **${formatGP(item.priceGp)} GP**${unitLabel} • ≈ **${formatUSD(item.priceGp)} USD**${unitLabel}\n`;
             }
@@ -590,8 +592,10 @@ export function createCalculatorPricingListEmbed(data: any) {
           const totalCost = hasDisc
             ? `~~${formatGP(item.originalTotalGp)}~~ **${formatGP(item.totalGp)} GP**`
             : `**${formatGP(item.totalGp)} GP**`;
+          const qtyUsed = item.effectiveQty ?? quantity;
+          const qtyNote = item.unit === 'flat' ? 'flat price' : `${qtyUsed.toLocaleString()}${unitName ? ` ${unitName}` : ''}`;
           description += `${icon} **${item.name}**\n`;
-          description += `💰 ${formatGP(item.priceGp)} GP${unitLabel} • **${quantity.toLocaleString()}${unitName ? ` ${unitName}` : ''}:** ${totalCost} (≈ ${formatUSD(item.totalGp)} USD)\n`;
+          description += `💰 ${formatGP(item.priceGp)} GP${unitLabel} • **${qtyNote}:** ${totalCost} (≈ ${formatUSD(item.totalGp)} USD)\n`;
         } else {
           description += `${icon} **${item.name}** — 💰 **${formatGP(item.priceGp)} GP**${unitLabel} • ≈ **${formatUSD(item.priceGp)} USD**${unitLabel}\n`;
         }

@@ -4090,7 +4090,8 @@ async function handlePricingCalculatorCommand(message: any, type: string) {
     // Grouped tiers: show all tiers in one embed
     const decorated = groupEntries.map(item => {
       const unitPriceGp = parseFloat(item.priceGp);
-      const originalTotalGp = unitPriceGp * quantity;
+      const effectiveQty = item.unit === 'flat' ? 1 : quantity; // flat stays same, per_point/per_kill scales
+      const originalTotalGp = unitPriceGp * effectiveQty;
       let discountPercentage = 0;
       let totalGp = originalTotalGp;
       if (walletSpent > 0) {
@@ -4101,6 +4102,7 @@ async function handlePricingCalculatorCommand(message: any, type: string) {
       return {
         ...item,
         priceGp: unitPriceGp,
+        effectiveQty,
         originalTotalGp,
         totalGp,
         discountPercentage,
