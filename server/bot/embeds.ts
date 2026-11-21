@@ -443,16 +443,25 @@ export function createCalculatorPricingEmbed(data: any) {
   description += `${targetLine}  •  🎁 Discount: **${hasDiscount ? discountPercentage : 0}%**\n\n`;
 
   description += `### ✅ PRICE\n`;
-  const unitLine = unitLabel
-    ? `**1 ${unitLabel.replace(/s$/, '')}:** 💰 **${formatGP(entry.priceGp)} GP**`
-    : `**Service price:** 💰 **${formatGP(entry.priceGp)} GP**`;
-  description += `${unitLine} • ≈ **${formatUSD(entry.priceGp)} USD**\n`;
-
-  if (quantity > 1) {
+  if (quantity <= 1) {
+    const cost = hasDiscount
+      ? `~~${formatGP(data.originalTotalGp)}~~ 💰 **${formatGP(data.totalGp)} GP**`
+      : `💰 **${formatGP(data.totalGp)} GP**`;
+    const label = unitLabel ? `**1 ${unitLabel.replace(/s$/, '')}:**` : `**Service price:**`;
+    description += `${label} ${cost} • ≈ **${formatUSD(data.totalGp)} USD**\n`;
+  } else {
+    const unitLine = unitLabel
+      ? `**1 ${unitLabel.replace(/s$/, '')}:** 💰 **${formatGP(entry.priceGp)} GP**`
+      : `**Service price:** 💰 **${formatGP(entry.priceGp)} GP**`;
+    description += `${unitLine} • ≈ **${formatUSD(entry.priceGp)} USD**\n`;
     const totalLine = hasDiscount
       ? `~~${formatGP(data.originalTotalGp)}~~ 💵 **${formatGP(data.totalGp)} GP**`
       : `💵 **${formatGP(data.totalGp)} GP**`;
     description += `**${quantity.toLocaleString()}${unitLabel ? ` ${unitLabel}` : ''}:** ${totalLine} • ≈ **${formatUSD(data.totalGp)} USD**\n`;
+  }
+
+  if (!hasDiscount) {
+    description += `\n*💡 Spend more GP to unlock rank discounts (up to 8% off)*\n`;
   }
 
   if (entry.description) {
@@ -552,7 +561,11 @@ export function createCalculatorPricingListEmbed(data: any) {
             const unitLabel = unitLabels[item.unit] ?? '';
             const unitName = unitNames[item.unit] ?? '';
             if (showTierTotals && typeof item.totalGp === 'number') {
-              description += `  ${icon} ${item.name}: **${formatGP(item.totalGp)} GP** • ≈ **${formatUSD(item.totalGp)} USD** (${quantity.toLocaleString()}${unitName ? ` ${unitName}` : ''})\n`;
+              const hasDisc = (item.discountPercentage || 0) > 0 && item.originalTotalGp > item.totalGp;
+              const cost = hasDisc
+                ? `~~${formatGP(item.originalTotalGp)}~~ **${formatGP(item.totalGp)} GP**`
+                : `**${formatGP(item.totalGp)} GP**`;
+              description += `  ${icon} ${item.name}: ${cost} • ≈ **${formatUSD(item.totalGp)} USD** (${quantity.toLocaleString()}${unitName ? ` ${unitName}` : ''})\n`;
             } else {
               description += `  ${icon} ${item.name}: **${formatGP(item.priceGp)} GP**${unitLabel} • ≈ **${formatUSD(item.priceGp)} USD**${unitLabel}\n`;
             }
@@ -573,8 +586,12 @@ export function createCalculatorPricingListEmbed(data: any) {
         const unitLabel = unitLabels[item.unit] ?? '';
         const unitName = unitNames[item.unit] ?? '';
         if (showTierTotals && typeof item.totalGp === 'number') {
+          const hasDisc = (item.discountPercentage || 0) > 0 && item.originalTotalGp > item.totalGp;
+          const totalCost = hasDisc
+            ? `~~${formatGP(item.originalTotalGp)}~~ **${formatGP(item.totalGp)} GP**`
+            : `**${formatGP(item.totalGp)} GP**`;
           description += `${icon} **${item.name}**\n`;
-          description += `💰 ${formatGP(item.priceGp)} GP${unitLabel} • **${quantity.toLocaleString()}${unitName ? ` ${unitName}` : ''}: ${formatGP(item.totalGp)} GP** (≈ ${formatUSD(item.totalGp)} USD)\n`;
+          description += `💰 ${formatGP(item.priceGp)} GP${unitLabel} • **${quantity.toLocaleString()}${unitName ? ` ${unitName}` : ''}:** ${totalCost} (≈ ${formatUSD(item.totalGp)} USD)\n`;
         } else {
           description += `${icon} **${item.name}** — 💰 **${formatGP(item.priceGp)} GP**${unitLabel} • ≈ **${formatUSD(item.priceGp)} USD**${unitLabel}\n`;
         }
@@ -583,7 +600,10 @@ export function createCalculatorPricingListEmbed(data: any) {
         }
       }
     }
-    description += `\n*💡 Use \`${commandMap[type]} <name> <quantity>\` for an exact quote*\n`;
+    if (!data.userRank || (data.userRank && !(items.some(i => (i.discountPercentage || 0) > 0)))) {
+      description += `\n*💡 Spend more GP to unlock rank discounts (up to 8% off)*\n`;
+    }
+    description += `*💡 Use \`${commandMap[type]} <name> <quantity>\` for an exact quote*\n`;
   }
 
   embed.setDescription(description.trim());
